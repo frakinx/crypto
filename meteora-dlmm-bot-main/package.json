@@ -7,23 +7,27 @@
     "build": "tsc -p .",
     "start": "node --env-file=.env --enable-source-maps dist/index.js",
     "dev": "ts-node-esm --esm src/index.ts",
+    "server": "tsx src/server.ts",
     "lint": "echo 'add your linter'"
   },
   "dependencies": {
-    "@solana/web3.js": "^1.95.6",
     "@meteora-ag/dlmm": "^1.6.1",
-    "undici": "^6.19.8",
-    "dotenv": "^16.4.5",
-    "yargs": "^17.7.2",
-    "zod": "^3.23.8",
-    "p-retry": "^6.2.0",
+    "@noble/hashes": "^1.5.0",
+    "@solana/web3.js": "^1.95.6",
+    "@types/express": "^5.0.5",
     "better-sqlite3": "^9.6.0",
-    "@noble/hashes": "^1.5.0"
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "p-retry": "^6.2.0",
+    "undici": "^6.19.8",
+    "yargs": "^17.7.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.5.4",
-    "ts-node": "^10.9.2",
     "@types/node": "^20.11.17",
-    "@types/yargs": "^17.0.32"
+    "@types/yargs": "^17.0.32",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.5.4"
   }
 }

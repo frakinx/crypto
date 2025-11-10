@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meteora DLMM Pools</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌊 Meteora DLMM Pools</h1>
+      <p class="subtitle">Отслеживание пулов ликвидности Meteora</p>
+      <div id="autoRefreshInfo" class="auto-refresh-info">Автообновление каждые 3 минуты</div>
+    </header>
+
+    <div class="controls">
+      <input type="text" id="searchInput" placeholder="Поиск по названию пула, токену..." />
+      <select id="sortSelect">
+        <option value="liquidity-desc">Ликвидность (убывание)</option>
+        <option value="liquidity-asc">Ликвидность (возрастание)</option>
+        <option value="volume-desc">Объем 24ч (убывание)</option>
+        <option value="volume-asc">Объем 24ч (возрастание)</option>
+        <option value="apr-desc">APR (убывание)</option>
+        <option value="apr-asc">APR (возрастание)</option>
+      </select>
+      <button id="filterBtn" class="filter-btn">🔍 Фильтр</button>
+      <button id="refreshBtn">🔄 Обновить</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-label">Всего пулов</div>
+        <div class="stat-value" id="totalPools">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Общая ликвидность</div>
+        <div class="stat-value" id="totalLiquidity">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Объем за 24ч</div>
+        <div class="stat-value" id="totalVolume">-</div>
+      </div>
+    </div>
+
+    <div id="loading" class="loading">Загрузка данных...</div>
+    <div id="error" class="error" style="display: none;"></div>
+    
+    <div id="poolsContainer" class="pools-container"></div>
+    
+    <div id="loadMoreContainer" style="text-align: center; margin-top: 30px; display: none;">
+      <button id="loadMoreBtn" class="load-more-btn">Загрузить еще</button>
+      <div id="poolsInfo" class="pools-info"></div>
+    </div>
+  </div>
+
+  <!-- Filter Modal -->
+  <div id="filterModal" class="filter-modal">
+    <div class="filter-modal-content">
+      <div class="filter-modal-header">
+        <h2>Filter by</h2>
+        <button class="filter-modal-close" id="closeFilterBtn">&times;</button>
+      </div>
+      
+      <div class="filter-modal-body">
+        <!-- Token Details -->
+        <div class="filter-section">
+          <h3>Token Details</h3>
+          <div class="filter-category">
+            <div class="filter-checkbox">
+              <label>
+                <input type="checkbox" id="filterVerified" />
+                <span>Verified</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bin Step Range -->
+        <div class="filter-section">
+          <h3>Bin step of the pool</h3>
+          <div class="filter-range">
+            <div class="filter-range-input">
+              <label>Min</label>
+              <input type="number" id="filterBinStepMin" placeholder="0" step="1" />
+            </div>
+            <div class="filter-range-input">
+              <label>Max</label>
+              <input type="number" id="filterBinStepMax" placeholder="∞" step="1" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Liquidity Range -->
+        <div class="filter-section">
+          <h3>Liquidity by range</h3>
+          <div class="filter-range">
+            <div class="filter-range-input">
+              <label>Min ($)</label>
+              <input type="number" id="filterLiquidityMin" placeholder="0" step="0.01" />
+            </div>
+            <div class="filter-range-input">
+              <label>Max ($)</label>
+              <input type="number" id="filterLiquidityMax" placeholder="∞" step="0.01" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Volume by Period -->
+        <div class="filter-section">
+          <h3>Volume by period</h3>
+          <div class="filter-period">
+            <select id="filterVolumePeriod" class="filter-period-select">
+              <option value="min_30">30m</option>
+              <option value="hour_1">1h</option>
+              <option value="hour_2">2h</option>
+              <option value="hour_4">4h</option>
+              <option value="hour_12">12h</option>
+              <option value="hour_24">24h</option>
+            </select>
+            <input type="number" id="filterVolumePeriodMin" placeholder="≥ $" step="0.01" class="filter-period-input" />
+          </div>
+        </div>
+
+        <!-- Fees by Period -->
+        <div class="filter-section">
+          <h3>Fees by period</h3>
+          <div class="filter-period">
+            <select id="filterFeesPeriod" class="filter-period-select">
+              <option value="min_30">30m</option>
+              <option value="hour_1">1h</option>
+              <option value="hour_2">2h</option>
+              <option value="hour_4">4h</option>
+              <option value="hour_12">12h</option>
+              <option value="hour_24">24h</option>
+            </select>
+            <input type="number" id="filterFeesPeriodMin" placeholder="≥ $" step="0.01" class="filter-period-input" />
+          </div>
+        </div>
+
+        <!-- Fee/TVL % by Period -->
+        <div class="filter-section">
+          <h3>Fee/TVL % by period</h3>
+          <div class="filter-period">
+            <select id="filterFeeTvlPeriod" class="filter-period-select">
+              <option value="min_30">30m</option>
+              <option value="hour_1">1h</option>
+              <option value="hour_2">2h</option>
+              <option value="hour_4">4h</option>
+              <option value="hour_12">12h</option>
+              <option value="hour_24">24h</option>
+            </select>
+            <input type="number" id="filterFeeTvlPeriodMin" placeholder="≥ %" step="0.01" class="filter-period-input" />
+          </div>
+        </div>
+
+        <!-- APR Range -->
+        <div class="filter-section">
+          <h3>APR by range</h3>
+          <div class="filter-range">
+            <div class="filter-range-input">
+              <label>Min (%)</label>
+              <input type="number" id="filterAprMin" placeholder="0" step="0.01" />
+            </div>
+            <div class="filter-range-input">
+              <label>Max (%)</label>
+              <input type="number" id="filterAprMax" placeholder="∞" step="0.01" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Launchpad -->
+        <div class="filter-section">
+          <div class="filter-section-header">
+            <h3>Launchpad</h3>
+            <button type="button" class="filter-select-all" id="selectAllLaunchpads">Select all</button>
+          </div>
+          <div style="font-size: 0.85em; color: rgba(255, 255, 255, 0.6); margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
+            💡 Фильтр по launchpad показывает ТОЛЬКО пулы с выбранными launchpad. Пулы без launchpad будут скрыты.
+          </div>
+          <div class="filter-launchpad-list" id="launchpadList">
+            <!-- Launchpad options will be populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Pool Features -->
+        <div class="filter-section">
+          <h3>Pool Features</h3>
+          <div class="filter-category">
+            <div class="filter-checkbox">
+              <label>
+                <input type="checkbox" id="filterLfg" />
+                <span>LFG tag</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-modal-footer">
+        <button class="filter-btn-reset" id="resetFilterBtn">
+          <span>↻</span> Reset
+        </button>
+        <button class="filter-btn-save" id="saveFilterBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
