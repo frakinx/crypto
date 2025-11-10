@@ -311,34 +311,35 @@ function applyFilters() {
     
     // Launchpad filter - если выбраны launchpad, показываем ТОЛЬКО пулы с выбранными launchpad
     if (filters.launchpads.length > 0) {
-      // Если у пула нет launchpad - исключаем
-      if (!pool.launchpad || pool.launchpad === null || pool.launchpad === '') {
+      // Получаем launchpad из пула (может быть в поле launchpad или определяем по другим признакам)
+      let poolLaunchpad = pool.launchpad;
+      
+      // Если launchpad не указан в данных, пытаемся определить по другим признакам
+      // (например, по адресу токена или названию)
+      if (!poolLaunchpad || poolLaunchpad === null || poolLaunchpad === '') {
+        // Пока что, если в данных нет launchpad, исключаем пул
+        // В будущем здесь можно добавить логику определения launchpad по адресу токена
         return false;
       }
       
-      // Проверяем, совпадает ли launchpad пула с выбранными
-      const launchpadName = String(pool.launchpad).toLowerCase().trim();
-      const matchesLaunchpad = filters.launchpads.some(lp => {
-        const lpLower = lp.toLowerCase().trim();
+      // Строгое сравнение launchpad (точное совпадение с нормализацией регистра и точек)
+      const poolLaunchpadLower = String(poolLaunchpad).toLowerCase().trim();
+      const matchesLaunchpad = filters.launchpads.some(selectedLp => {
+        const selectedLpLower = selectedLp.toLowerCase().trim();
         
-        // Убираем все не-буквенные символы для более гибкого сравнения
-        const normalize = (str) => str.replace(/[^a-z0-9]/g, '');
-        const normalizedLp = normalize(lpLower);
-        const normalizedPool = normalize(launchpadName);
+        // Точное совпадение (с учетом того, что могут быть разные варианты написания)
+        if (poolLaunchpadLower === selectedLpLower) return true;
         
-        // Проверяем различные варианты совпадения
-        if (normalizedPool === normalizedLp) return true;
-        if (launchpadName === lpLower) return true;
-        if (launchpadName.includes(lpLower) || lpLower.includes(launchpadName)) return true;
-        if (normalizedPool.includes(normalizedLp) || normalizedLp.includes(normalizedPool)) return true;
+        // Нормализация: убираем точки и пробелы для сравнения
+        // "time.fun" === "Time.fun" === "time fun"
+        const normalize = (str) => str.replace(/[.\s-_]/g, '').toLowerCase();
+        const normalizedPool = normalize(poolLaunchpadLower);
+        const normalizedSelected = normalize(selectedLpLower);
         
-        // Проверяем частичное совпадение (например, "timefun" и "time.fun")
-        const lpParts = lpLower.split(/[.\s-]/).filter(p => p.length > 0);
-        const poolParts = launchpadName.split(/[.\s-]/).filter(p => p.length > 0);
-        if (lpParts.some(part => poolParts.includes(part)) || poolParts.some(part => lpParts.includes(part))) {
-          return true;
-        }
+        if (normalizedPool === normalizedSelected) return true;
         
+        // Дополнительная проверка: "timefun" должно совпадать с "Time.fun"
+        // Но "pumpfun" НЕ должно совпадать с "timefun"
         return false;
       });
       
@@ -370,25 +371,20 @@ function applyFilters() {
   }
   
   if (filters.launchpads.length > 0) {
+    const normalize = (str) => str.replace(/[.\s-_]/g, '').toLowerCase();
+    
     const withLaunchpad = poolsToFilter.filter(p => p.launchpad && p.launchpad !== null && p.launchpad !== '').length;
     const matchingLaunchpad = poolsToFilter.filter(p => {
       if (!p.launchpad || p.launchpad === null || p.launchpad === '') return false;
       const lpName = String(p.launchpad).toLowerCase().trim();
       return filters.launchpads.some(lp => {
         const lpLower = lp.toLowerCase().trim();
-        const normalize = (str) => str.replace(/[^a-z0-9]/g, '');
-        const normalizedLp = normalize(lpLower);
-        const normalizedPool = normalize(lpName);
-        return normalizedPool === normalizedLp || 
-               lpName === lpLower || 
-               lpName.includes(lpLower) || 
-               lpLower.includes(lpName) ||
-               normalizedPool.includes(normalizedLp) || 
-               normalizedLp.includes(normalizedPool);
+        // Строгое сравнение: точное совпадение или нормализованное совпадение
+        return lpName === lpLower || normalize(lpName) === normalize(lpLower);
       });
     }).length;
     console.log(`🚀 Launchpad фильтр: выбрано ${filters.launchpads.length} launchpad (${filters.launchpads.join(', ')})`);
-    console.log(`   - Всего пулов с любым launchpad: ${withLaunchpad}`);
+    console.log(`   - Всего пулов с любым launchpad в данных: ${withLaunchpad}`);
     console.log(`   - Пулов с ВЫБРАННЫМИ launchpad (будут показаны): ${matchingLaunchpad}`);
     console.log(`   - Пулов БЕЗ launchpad (будут ИСКЛЮЧЕНЫ): ${poolsToFilter.length - withLaunchpad}`);
     
@@ -399,23 +395,16 @@ function applyFilters() {
         const lpName = String(p.launchpad).toLowerCase().trim();
         return filters.launchpads.some(lp => {
           const lpLower = lp.toLowerCase().trim();
-          const normalize = (str) => str.replace(/[^a-z0-9]/g, '');
-          const normalizedLp = normalize(lpLower);
-          const normalizedPool = normalize(lpName);
-          return normalizedPool === normalizedLp || 
-                 lpName === lpLower || 
-                 lpName.includes(lpLower) || 
-                 lpLower.includes(lpName) ||
-                 normalizedPool.includes(normalizedLp) || 
-                 normalizedLp.includes(normalizedPool);
+          return lpName === lpLower || normalize(lpName) === normalize(lpLower);
         });
       }).slice(0, 5);
-      console.log(`   Примеры пулов с выбранными launchpad:`);
+      console.log(`   ✅ Примеры пулов с выбранными launchpad:`);
       matchingPools.forEach(p => {
         console.log(`     - ${p.name}: launchpad="${p.launchpad}"`);
       });
     } else {
-      console.log(`   ⚠️  НЕТ пулов с выбранными launchpad!`);
+      console.log(`   ⚠️  НЕТ пулов с выбранными launchpad в данных API!`);
+      console.log(`   💡 Проблема: API содержит launchpad только для ${withLaunchpad} пулов из ${poolsToFilter.length}`);
       // Показываем, какие launchpad есть в данных
       const allLaunchpads = new Set();
       poolsToFilter.forEach(p => {
@@ -424,7 +413,10 @@ function applyFilters() {
         }
       });
       if (allLaunchpads.size > 0) {
-        console.log(`   Доступные launchpad в данных:`, Array.from(allLaunchpads));
+        console.log(`   📋 Доступные launchpad в данных API:`, Array.from(allLaunchpads));
+        console.log(`   💡 На Meteora могут использоваться другие данные или способ определения launchpad`);
+      } else {
+        console.log(`   ⚠️  В данных API НЕТ информации о launchpad для ни одного пула!`);
       }
     }
   }
@@ -464,37 +456,61 @@ function applyFilters() {
   
   // Показываем первые 5 отфильтрованных пулов для отладки
   if (filteredPools.length > 0) {
-    console.log('📋 Первые 5 отфильтрованных пулов:');
+    console.log(`📋 Первые ${Math.min(5, filteredPools.length)} отфильтрованных пулов (всего ${filteredPools.length}):`);
+    const normalize = (str) => str.replace(/[.\s-_]/g, '').toLowerCase();
     filteredPools.slice(0, 5).forEach((pool, idx) => {
       console.log(`   ${idx + 1}. ${pool.name} (${pool.address?.substring(0, 8)}...) - verified: ${pool.is_verified}, launchpad: ${pool.launchpad || 'нет'}, liquidity: ${pool.liquidity}`);
+      
+      // Проверяем, почему этот пул прошел фильтры
+      if (filters.launchpads.length > 0) {
+        if (!pool.launchpad || pool.launchpad === null || pool.launchpad === '') {
+          console.log(`      ⚠️  БАГ: Этот пул прошел фильтр по launchpad, но у него нет launchpad!`);
+        } else {
+          const poolLp = String(pool.launchpad).toLowerCase().trim();
+          const matches = filters.launchpads.some(lp => {
+            const lpLower = lp.toLowerCase().trim();
+            return poolLp === lpLower || normalize(poolLp) === normalize(lpLower);
+          });
+          if (!matches) {
+            console.log(`      ⚠️  БАГ: Пула прошел фильтр, но launchpad "${pool.launchpad}" не совпадает с "${filters.launchpads.join(', ')}"!`);
+          } else {
+            console.log(`      ✅ Launchpad совпадает: "${pool.launchpad}" === "${filters.launchpads.join(' или ')}"`);
+          }
+        }
+      }
     });
   } else {
     console.log('❌ Нет пулов, соответствующих фильтрам!');
     
-    // Показываем, почему пулы не прошли фильтры (пример первых 10)
-    console.log('🔍 Анализ первых 10 пулов, почему они не прошли:');
-    poolsToFilter.slice(0, 10).forEach((pool, idx) => {
-      const reasons = [];
-      if (filters.verified && !pool.is_verified) reasons.push('не verified');
-      if (filters.launchpads.length > 0 && pool.launchpad) {
-        const lpName = String(pool.launchpad).toLowerCase().trim();
-        const matches = filters.launchpads.some(lp => {
-          const lpLower = lp.toLowerCase().trim();
-          return lpName === lpLower || lpName.includes(lpLower) || lpLower.includes(lpName);
-        });
-        if (!matches) reasons.push(`launchpad не совпадает (${pool.launchpad})`);
-      }
-      if (filters.lfg && !pool.tags?.includes('lfg')) reasons.push('нет LFG тега');
-      if (filters.liquidityMin !== null && parseFloat(pool.liquidity || 0) < filters.liquidityMin) {
-        reasons.push(`ликвидность ${pool.liquidity} < ${filters.liquidityMin}`);
-      }
-      if (filters.volumePeriodMin !== null && filters.volumePeriodMin > 0) {
-        const vol = parseFloat(pool.volume?.[filters.volumePeriod] || pool.trade_volume_24h || 0);
-        if (vol < filters.volumePeriodMin) reasons.push(`volume ${vol} < ${filters.volumePeriodMin}`);
-      }
-      
-      console.log(`   ${idx + 1}. ${pool.name}: ${reasons.length > 0 ? reasons.join(', ') : 'должен пройти (?)'}`);
-    });
+      // Показываем, почему пулы не прошли фильтры (пример первых 10)
+      console.log('🔍 Анализ первых 10 пулов, почему они не прошли:');
+      const normalize = (str) => str.replace(/[.\s-_]/g, '').toLowerCase();
+      poolsToFilter.slice(0, 10).forEach((pool, idx) => {
+        const reasons = [];
+        if (filters.verified && !pool.is_verified) reasons.push('не verified');
+        if (filters.launchpads.length > 0) {
+          if (!pool.launchpad || pool.launchpad === null || pool.launchpad === '') {
+            reasons.push('нет launchpad в данных');
+          } else {
+            const lpName = String(pool.launchpad).toLowerCase().trim();
+            const matches = filters.launchpads.some(lp => {
+              const lpLower = lp.toLowerCase().trim();
+              return lpName === lpLower || normalize(lpName) === normalize(lpLower);
+            });
+            if (!matches) reasons.push(`launchpad "${pool.launchpad}" не совпадает с выбранными "${filters.launchpads.join(', ')}"`);
+          }
+        }
+        if (filters.lfg && !pool.tags?.includes('lfg')) reasons.push('нет LFG тега');
+        if (filters.liquidityMin !== null && parseFloat(pool.liquidity || 0) < filters.liquidityMin) {
+          reasons.push(`ликвидность ${pool.liquidity} < ${filters.liquidityMin}`);
+        }
+        if (filters.volumePeriodMin !== null && filters.volumePeriodMin > 0) {
+          const vol = parseFloat(pool.volume?.[filters.volumePeriod] || pool.trade_volume_24h || 0);
+          if (vol < filters.volumePeriodMin) reasons.push(`volume ${vol} < ${filters.volumePeriodMin}`);
+        }
+        
+        console.log(`   ${idx + 1}. ${pool.name}: ${reasons.length > 0 ? reasons.join(', ') : '⚠️ должен был быть исключен, но прошел фильтры (баг!)'}`);
+      });
   }
   
   console.log('🔍 ========== КОНЕЦ ФИЛЬТРАЦИИ ==========');
@@ -560,7 +576,8 @@ function renderPools() {
       
       let tips = [];
       if (hasLaunchpadFilter) {
-        tips.push('• Фильтр по launchpad: показывает ТОЛЬКО пулы с выбранными launchpad. Проверьте, есть ли такие пулы в данных.');
+        tips.push('• Фильтр по launchpad: API Meteora содержит информацию о launchpad только для очень малого количества пулов. Большинство пулов не имеют поля launchpad в данных API.');
+        tips.push('• Это ограничение API, а не ошибка фильтрации. Meteora может использовать другой источник данных для определения launchpad на своем сайте.');
       }
       if (hasVolumeFilter || hasFeesFilter) {
         tips.push('• Фильтры по объемам/комиссиям: только ~1.8% пулов имеют активность за 24ч. Попробуйте уменьшить значение фильтра.');
