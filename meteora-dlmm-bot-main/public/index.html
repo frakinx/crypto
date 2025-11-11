@@ -14,6 +14,15 @@
       <div id="autoRefreshInfo" class="auto-refresh-info">Автообновление каждые 3 минуты</div>
     </header>
 
+    <!-- Tabs Navigation -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="pools">📊 Пулы</button>
+      <button class="tab-btn" data-tab="wallet">👛 Кошелек & Прокси</button>
+    </div>
+
+    <!-- Pools Tab -->
+    <div id="poolsTab" class="tab-content active">
+
     <div class="controls">
       <input type="text" id="searchInput" placeholder="Поиск по названию пула, токену..." />
       <select id="sortSelect">
@@ -51,6 +60,143 @@
     <div id="loadMoreContainer" style="text-align: center; margin-top: 30px; display: none;">
       <button id="loadMoreBtn" class="load-more-btn">Загрузить еще</button>
       <div id="poolsInfo" class="pools-info"></div>
+    </div>
+    </div>
+
+    <!-- Wallet & Proxy Tab -->
+    <div id="walletTab" class="tab-content">
+      <div class="wallet-section">
+        <h2>🔌 Подключение кошелька</h2>
+        <div class="wallet-card">
+          <div class="wallet-status" id="walletStatus">
+            <div class="status-indicator disconnected"></div>
+            <span id="walletStatusText">Не подключен</span>
+          </div>
+          <div id="walletInfo" class="wallet-info" style="display: none;">
+            <div class="wallet-address">
+              <strong>Адрес:</strong> <span id="walletAddress">-</span>
+              <button id="copyAddressBtn" class="copy-btn" title="Копировать адрес">📋</button>
+            </div>
+            <div class="wallet-balance">
+              <strong>Баланс SOL:</strong> <span id="walletBalance">-</span>
+              <button id="refreshBalanceBtn" class="refresh-balance-btn" title="Обновить баланс" style="margin-left: 8px; padding: 4px 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em; display: none;">🔄</button>
+            </div>
+            <div class="wallet-hint" style="font-size: 0.85em; color: #666; margin-top: 8px; padding: 8px; background: #f0f0f0; border-radius: 4px;">
+              💡 <strong>Совет:</strong> Публичный RPC Solana может быть медленным. Для более быстрой загрузки используйте быстрый RPC endpoint (Helius, QuickNode, Triton) в настройках RPC ниже.
+            </div>
+          </div>
+          <div class="wallet-actions">
+            <button id="connectPhantomBtn" class="wallet-btn phantom-btn">
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23AB9FF2'%3E%3Cpath d='M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm4.5 8.25h-2.25v-1.5h2.25v1.5zm-9 0H5.25v-1.5H7.5v1.5zm11.25 0h-2.25v-1.5h2.25v1.5zm-9 0H5.25v-1.5h2.25v1.5z'/%3E%3C/svg%3E" alt="Phantom" class="wallet-icon">
+              Подключить Phantom
+            </button>
+            <button id="disconnectWalletBtn" class="wallet-btn disconnect-btn" style="display: none;">
+              Отключить кошелек
+            </button>
+          </div>
+          <div id="walletError" class="wallet-error" style="display: none;"></div>
+        </div>
+      </div>
+
+      <div class="wallet-section">
+        <h2>🔁 Swap (Jupiter v6)</h2>
+        <div class="wallet-card">
+          <div class="token-selector">
+            <label>From:</label>
+            <div class="token-quick">
+              <button type="button" class="token-chip" data-role="input" data-symbol="SOL">SOL</button>
+              <button type="button" class="token-chip" data-role="input" data-symbol="USDC">USDC</button>
+              <button type="button" class="token-chip" data-role="input" data-symbol="USDT">USDT</button>
+            </div>
+            <input type="text" id="inputTokenSearch" placeholder="Search token name or symbol..." autocomplete="off">
+            <div id="inputTokenDropdown" class="token-dropdown" style="display: none;"></div>
+            <input type="hidden" id="inputMint">
+            <div id="inputTokenInfo" class="token-info"></div>
+          </div>
+          <div class="token-selector">
+            <label>To:</label>
+            <div class="token-quick">
+              <button type="button" class="token-chip" data-role="output" data-symbol="SOL">SOL</button>
+              <button type="button" class="token-chip" data-role="output" data-symbol="USDC">USDC</button>
+              <button type="button" class="token-chip" data-role="output" data-symbol="USDT">USDT</button>
+            </div>
+            <input type="text" id="outputTokenSearch" placeholder="Search token name or symbol..." autocomplete="off">
+            <div id="outputTokenDropdown" class="token-dropdown" style="display: none;"></div>
+            <input type="hidden" id="outputMint">
+            <div id="outputTokenInfo" class="token-info"></div>
+          </div>
+          <div class="form-group">
+            <label for="swapAmount">Amount (in smallest units of input mint):</label>
+            <input type="number" id="swapAmount" placeholder="Напр., для 0.1 SOL в лампортах: 100000000" />
+            <small>Вводите сумму в минимальных единицах токена (например, лампорты для SOL)</small>
+          </div>
+          <div class="form-group">
+            <label for="swapSlippage">Slippage (bps):</label>
+            <input type="number" id="swapSlippage" placeholder="100 = 1%" value="100" />
+          </div>
+          <div class="form-actions">
+            <button type="button" id="jupGetQuoteBtn" class="save-btn">Получить котировку</button>
+            <button type="button" id="jupSwapBtn" class="test-btn">Сделать свап</button>
+          </div>
+          <div id="swap-status" class="rpc-status" style="display: none;">
+            <div class="status-message"></div>
+          </div>
+          <div id="jupQuoteResult" class="rpc-status" style="display: none;">
+            <div class="status-message"></div>
+          </div>
+          <div id="jupSwapResult" class="rpc-status" style="display: none;">
+            <div class="status-message"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="proxy-section">
+        <h2>🌐 Настройка прокси</h2>
+        <div class="proxy-card">
+          <form id="proxyForm">
+            <div class="form-group">
+              <label for="proxyEnabled">
+                <input type="checkbox" id="proxyEnabled" />
+                Использовать прокси
+              </label>
+            </div>
+            <div class="form-group">
+              <label for="proxyType">Тип прокси:</label>
+              <select id="proxyType" disabled>
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks4">SOCKS4</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="proxyHost">Хост:</label>
+              <input type="text" id="proxyHost" placeholder="proxy.example.com" disabled />
+            </div>
+            <div class="form-group">
+              <label for="proxyPort">Порт:</label>
+              <input type="number" id="proxyPort" placeholder="8080" disabled />
+            </div>
+            <div class="form-group">
+              <label for="proxyUsername">Имя пользователя (опционально):</label>
+              <input type="text" id="proxyUsername" placeholder="username" disabled />
+            </div>
+            <div class="form-group">
+              <label for="proxyPassword">Пароль (опционально):</label>
+              <input type="password" id="proxyPassword" placeholder="password" disabled />
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="save-btn" disabled>Сохранить настройки</button>
+              <button type="button" id="testProxyBtn" class="test-btn" disabled>Тестировать прокси</button>
+            </div>
+          </form>
+          <div id="proxyStatus" class="proxy-status" style="display: none;">
+            <div class="status-message"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RPC settings removed: using fixed Helius RPC endpoint in code -->
     </div>
   </div>
 
@@ -206,7 +352,21 @@
     </div>
   </div>
 
+  <!-- Solana Web3 (browser, for deserializing VersionedTransaction) -->
+  <script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
+  <script src="swap.js"></script>
   <script src="app.js"></script>
+  <!-- Phantom Wallet SDK -->
+  <script>
+    // Check if Phantom is installed
+    window.addEventListener('load', () => {
+      if (window.solana && window.solana.isPhantom) {
+        console.log('Phantom wallet detected');
+      } else {
+        console.log('Phantom wallet not detected');
+      }
+    });
+  </script>
 </body>
 </html>
 

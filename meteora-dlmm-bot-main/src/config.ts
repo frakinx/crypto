@@ -1,6 +1,8 @@
 import 'dotenv/config';
 
 export const CONFIG = {
+  // Используем более быстрый публичный RPC по умолчанию
+  // Пользователь может изменить в настройках веб-интерфейса
   rpcUrl: process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com',
   secretKey: process.env.WALLET_SECRET_KEY ?? '',
   jup: {

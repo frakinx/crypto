@@ -866,32 +866,473 @@ function updateFilterButtonIndicator() {
   }
 }
 
-// Обработчики событий
-document.getElementById('searchInput').addEventListener('input', applyFilters);
-document.getElementById('sortSelect').addEventListener('change', applyFilters);
-document.getElementById('refreshBtn').addEventListener('click', refreshPools);
-document.getElementById('loadMoreBtn').addEventListener('click', loadMorePools);
-document.getElementById('filterBtn').addEventListener('click', openFilterModal);
-document.getElementById('closeFilterBtn').addEventListener('click', closeFilterModal);
-document.getElementById('resetFilterBtn').addEventListener('click', resetFilters);
-document.getElementById('saveFilterBtn').addEventListener('click', saveFilters);
-document.getElementById('selectAllLaunchpads').addEventListener('click', selectAllLaunchpads);
+// ========== TABS FUNCTIONALITY ==========
+function initTabs() {
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
 
-// Инициализация при загрузке
-initLaunchpadList();
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const targetTab = button.getAttribute('data-tab');
 
-// Закрытие модального окна при клике вне его
-document.getElementById('filterModal').addEventListener('click', (e) => {
-  if (e.target.id === 'filterModal') {
-    closeFilterModal();
+      // Remove active class from all tabs and contents
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+
+      // Add active class to clicked tab and corresponding content
+      button.classList.add('active');
+      document.getElementById(`${targetTab}Tab`).classList.add('active');
+    });
+  });
+}
+
+// Инициализация при загрузке DOM
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize launchpad list
+  initLaunchpadList();
+
+  // Обработчики событий для фильтров
+  const searchInput = document.getElementById('searchInput');
+  const sortSelect = document.getElementById('sortSelect');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const loadMoreBtn = document.getElementById('loadMoreBtn');
+  const filterBtn = document.getElementById('filterBtn');
+  const closeFilterBtn = document.getElementById('closeFilterBtn');
+  const resetFilterBtn = document.getElementById('resetFilterBtn');
+  const saveFilterBtn = document.getElementById('saveFilterBtn');
+  const selectAllLaunchpads = document.getElementById('selectAllLaunchpads');
+
+  if (searchInput) searchInput.addEventListener('input', applyFilters);
+  if (sortSelect) sortSelect.addEventListener('change', applyFilters);
+  if (refreshBtn) refreshBtn.addEventListener('click', refreshPools);
+  if (loadMoreBtn) loadMoreBtn.addEventListener('click', loadMorePools);
+  if (filterBtn) filterBtn.addEventListener('click', openFilterModal);
+  if (closeFilterBtn) closeFilterBtn.addEventListener('click', closeFilterModal);
+  if (resetFilterBtn) resetFilterBtn.addEventListener('click', resetFilters);
+  if (saveFilterBtn) saveFilterBtn.addEventListener('click', saveFilters);
+  if (selectAllLaunchpads) selectAllLaunchpads.addEventListener('click', selectAllLaunchpads);
+
+  // Закрытие модального окна при клике вне его
+  const filterModal = document.getElementById('filterModal');
+  if (filterModal) {
+    filterModal.addEventListener('click', (e) => {
+      if (e.target.id === 'filterModal') {
+        closeFilterModal();
+      }
+    });
+  }
+
+  // Загрузка при старте
+  loadPools(true, true);
+  updateFilterButtonIndicator();
+
+  // Запускаем автообновление каждые 3 минуты
+  autoRefreshTimer = setInterval(autoRefreshPools, AUTO_REFRESH_INTERVAL);
+  updateAutoRefreshInfo();
+
+  // Initialize tabs
+  initTabs();
+
+  // Wallet event listeners
+  const connectBtn = document.getElementById('connectPhantomBtn');
+  const disconnectBtn = document.getElementById('disconnectWalletBtn');
+  const copyBtn = document.getElementById('copyAddressBtn');
+
+  if (connectBtn) connectBtn.addEventListener('click', connectPhantom);
+  if (disconnectBtn) disconnectBtn.addEventListener('click', disconnectWallet);
+  if (copyBtn) copyBtn.addEventListener('click', copyAddressToClipboard);
+  
+  // Refresh balance button
+  const refreshBalanceBtn = document.getElementById('refreshBalanceBtn');
+  if (refreshBalanceBtn) {
+    refreshBalanceBtn.addEventListener('click', () => {
+      if (walletPublicKey) {
+        updateWalletBalance();
+      }
+    });
+  }
+
+  // Initialize forms
+  initProxyForm();
+
+  // Initialize Jupiter swap UI
+  initJupiterSwap();
+
+  // Load saved settings on page load
+  loadWalletSettings();
+
+  // Check if Phantom is installed
+  const provider = getPhantomProvider();
+  if (!provider) {
+    const errorEl = document.getElementById('walletError');
+    if (errorEl) {
+      errorEl.textContent = 'Phantom кошелек не установлен. Установите расширение Phantom для подключения кошелька.';
+      errorEl.style.display = 'block';
+    }
   }
 });
 
-// Загрузка при старте
-loadPools(true, true);
-updateFilterButtonIndicator();
+// ========== PHANTOM WALLET FUNCTIONALITY ==========
+let phantomWallet = null;
+let walletPublicKey = null;
+let walletBalance = null;
 
-// Запускаем автообновление каждые 3 минуты
-autoRefreshTimer = setInterval(autoRefreshPools, AUTO_REFRESH_INTERVAL);
-updateAutoRefreshInfo();
+function getPhantomProvider() {
+  if ('solana' in window) {
+    const provider = window.solana;
+    if (provider.isPhantom) {
+      return provider;
+    }
+  }
+  return null;
+}
+
+async function connectPhantom() {
+  const errorEl = document.getElementById('walletError');
+  errorEl.style.display = 'none';
+
+  try {
+    const provider = getPhantomProvider();
+    if (!provider) {
+      throw new Error('Phantom кошелек не найден. Установите расширение Phantom из Chrome Web Store.');
+    }
+
+    // Request connection
+    const response = await provider.connect();
+    walletPublicKey = response.publicKey.toString();
+    phantomWallet = provider;
+
+    // Update UI
+    updateWalletUI();
+    
+    // Save wallet connection to server first
+    await saveWalletSettings({ publicKey: walletPublicKey, connected: true });
+    
+    // Fetch balance (this will update UI when done)
+    updateWalletBalance();
+
+    // Listen for disconnect
+    provider.on('disconnect', handleWalletDisconnect);
+
+    console.log('Phantom wallet connected:', walletPublicKey);
+  } catch (error) {
+    console.error('Error connecting Phantom:', error);
+    errorEl.textContent = error.message || 'Ошибка подключения кошелька';
+    errorEl.style.display = 'block';
+  }
+}
+
+async function disconnectWallet() {
+  try {
+    if (phantomWallet) {
+      await phantomWallet.disconnect();
+    }
+    handleWalletDisconnect();
+    
+    // Clear wallet settings on server
+    await saveWalletSettings({ publicKey: null, connected: false });
+    
+    console.log('Wallet disconnected');
+  } catch (error) {
+    console.error('Error disconnecting wallet:', error);
+  }
+}
+
+function handleWalletDisconnect() {
+  phantomWallet = null;
+  walletPublicKey = null;
+  walletBalance = null;
+  updateWalletUI();
+}
+
+function updateWalletUI() {
+  const statusEl = document.getElementById('walletStatus');
+  const statusTextEl = document.getElementById('walletStatusText');
+  const statusIndicator = statusEl.querySelector('.status-indicator');
+  const walletInfoEl = document.getElementById('walletInfo');
+  const addressEl = document.getElementById('walletAddress');
+  const balanceEl = document.getElementById('walletBalance');
+  const connectBtn = document.getElementById('connectPhantomBtn');
+  const disconnectBtn = document.getElementById('disconnectWalletBtn');
+  const refreshBalanceBtn = document.getElementById('refreshBalanceBtn');
+
+  if (walletPublicKey) {
+    statusIndicator.classList.remove('disconnected');
+    statusIndicator.classList.add('connected');
+    statusTextEl.textContent = 'Подключен';
+    walletInfoEl.style.display = 'block';
+    addressEl.textContent = walletPublicKey;
+    
+    // Обновляем только span с балансом, не весь элемент
+    const balanceSpan = document.querySelector('#walletBalance');
+    if (balanceSpan) {
+      balanceSpan.textContent = walletBalance !== null ? `${walletBalance.toFixed(4)} SOL` : 'Загрузка...';
+    }
+    
+    connectBtn.style.display = 'none';
+    disconnectBtn.style.display = 'block';
+    if (refreshBalanceBtn) refreshBalanceBtn.style.display = 'inline-block';
+  } else {
+    statusIndicator.classList.remove('connected');
+    statusIndicator.classList.add('disconnected');
+    statusTextEl.textContent = 'Не подключен';
+    walletInfoEl.style.display = 'none';
+    connectBtn.style.display = 'block';
+    disconnectBtn.style.display = 'none';
+    if (refreshBalanceBtn) refreshBalanceBtn.style.display = 'none';
+  }
+}
+
+async function updateWalletBalance() {
+  if (!walletPublicKey) return;
+
+  // Показываем индикатор загрузки
+  const balanceSpan = document.querySelector('#walletBalance');
+  if (balanceSpan) {
+    balanceSpan.textContent = 'Загрузка...';
+  }
+  
+  // Скрываем ошибку при новой попытке
+  const errorEl = document.getElementById('walletError');
+  if (errorEl) {
+    errorEl.style.display = 'none';
+  }
+
+  try {
+    // Создаем AbortController для таймаута на клиенте
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 секунд таймаут
+
+    // Fetch balance from server (server will use RPC)
+    const response = await fetch(`/api/wallet/balance?address=${walletPublicKey}`, {
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      walletBalance = data.balance || 0;
+      updateWalletUI();
+      
+      // Скрываем ошибку если она была показана
+      const errorEl = document.getElementById('walletError');
+      if (errorEl) {
+        errorEl.style.display = 'none';
+      }
+    } else {
+      // Обработка ошибок от сервера
+      const errorData = await response.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+      console.error('Error fetching balance:', errorData.error);
+      
+      // Показываем ошибку пользователю
+      const errorEl = document.getElementById('walletError');
+      if (errorEl) {
+        errorEl.textContent = `Ошибка загрузки баланса: ${errorData.error}`;
+        errorEl.style.display = 'block';
+      }
+      
+      walletBalance = null;
+      if (balanceSpan) {
+        balanceSpan.textContent = 'Ошибка';
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching balance:', error);
+    
+    // Обработка различных типов ошибок
+    let errorMessage = 'Ошибка загрузки баланса';
+    if (error.name === 'AbortError') {
+      errorMessage = 'Таймаут: запрос занял слишком много времени. Попробуйте использовать другой RPC endpoint в настройках.';
+    } else if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+      errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение к интернету.';
+    } else {
+      errorMessage = `Ошибка: ${error.message}`;
+    }
+    
+    // Показываем ошибку пользователю
+    const errorEl = document.getElementById('walletError');
+    if (errorEl) {
+      errorEl.textContent = errorMessage;
+      errorEl.style.display = 'block';
+    }
+    
+    walletBalance = null;
+    if (balanceSpan) {
+      balanceSpan.textContent = 'Ошибка';
+    }
+    
+    // Обновляем UI чтобы показать ошибку
+    updateWalletUI();
+  }
+}
+
+function copyAddressToClipboard() {
+  if (!walletPublicKey) return;
+  
+  navigator.clipboard.writeText(walletPublicKey).then(() => {
+    const btn = document.getElementById('copyAddressBtn');
+    const originalText = btn.textContent;
+    btn.textContent = '✓ Скопировано';
+    setTimeout(() => {
+      btn.textContent = originalText;
+    }, 2000);
+  });
+}
+
+// ========== PROXY SETTINGS FUNCTIONALITY ==========
+function initProxyForm() {
+  const proxyEnabled = document.getElementById('proxyEnabled');
+  const proxyInputs = document.querySelectorAll('#proxyForm input:not(#proxyEnabled), #proxyForm select');
+
+  proxyEnabled.addEventListener('change', (e) => {
+    const enabled = e.target.checked;
+    proxyInputs.forEach(input => {
+      input.disabled = !enabled;
+    });
+    document.getElementById('testProxyBtn').disabled = !enabled;
+    document.querySelector('#proxyForm .save-btn').disabled = !enabled;
+  });
+
+  document.getElementById('proxyForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await saveProxySettings();
+  });
+
+  document.getElementById('testProxyBtn').addEventListener('click', async () => {
+    await testProxy();
+  });
+
+  // Load saved settings
+  loadProxySettings();
+}
+
+async function saveProxySettings() {
+  const proxySettings = {
+    enabled: document.getElementById('proxyEnabled').checked,
+    type: document.getElementById('proxyType').value,
+    host: document.getElementById('proxyHost').value,
+    port: parseInt(document.getElementById('proxyPort').value),
+    username: document.getElementById('proxyUsername').value || null,
+    password: document.getElementById('proxyPassword').value || null,
+  };
+
+  try {
+    const response = await fetch('/api/settings/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(proxySettings),
+    });
+
+    if (!response.ok) throw new Error('Ошибка сохранения настроек прокси');
+
+    showProxyStatus('Настройки прокси сохранены', 'success');
+    console.log('Proxy settings saved:', proxySettings);
+  } catch (error) {
+    console.error('Error saving proxy settings:', error);
+    showProxyStatus('Ошибка сохранения настроек: ' + error.message, 'error');
+  }
+}
+
+async function loadProxySettings() {
+  try {
+    const response = await fetch('/api/settings/proxy');
+    if (!response.ok) return;
+
+    const settings = await response.json();
+    if (settings) {
+      document.getElementById('proxyEnabled').checked = settings.enabled || false;
+      document.getElementById('proxyType').value = settings.type || 'http';
+      document.getElementById('proxyHost').value = settings.host || '';
+      document.getElementById('proxyPort').value = settings.port || '';
+      document.getElementById('proxyUsername').value = settings.username || '';
+      document.getElementById('proxyPassword').value = settings.password || '';
+
+      // Trigger change event to enable/disable inputs
+      document.getElementById('proxyEnabled').dispatchEvent(new Event('change'));
+    }
+  } catch (error) {
+    console.error('Error loading proxy settings:', error);
+  }
+}
+
+async function testProxy() {
+  const statusEl = document.getElementById('proxyStatus');
+  statusEl.style.display = 'block';
+  statusEl.className = 'proxy-status info';
+  statusEl.querySelector('.status-message').textContent = 'Тестирование прокси...';
+
+  try {
+    const response = await fetch('/api/settings/proxy/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: document.getElementById('proxyType').value,
+        host: document.getElementById('proxyHost').value,
+        port: parseInt(document.getElementById('proxyPort').value),
+        username: document.getElementById('proxyUsername').value || null,
+        password: document.getElementById('proxyPassword').value || null,
+      }),
+    });
+
+    const result = await response.json();
+    if (result.success) {
+      showProxyStatus('Прокси работает корректно!', 'success');
+    } else {
+      showProxyStatus('Ошибка подключения к прокси: ' + (result.error || 'Неизвестная ошибка'), 'error');
+    }
+  } catch (error) {
+    console.error('Error testing proxy:', error);
+    showProxyStatus('Ошибка тестирования прокси: ' + error.message, 'error');
+  }
+}
+
+function showProxyStatus(message, type) {
+  const statusEl = document.getElementById('proxyStatus');
+  statusEl.style.display = 'block';
+  statusEl.className = `proxy-status ${type}`;
+  statusEl.querySelector('.status-message').textContent = message;
+}
+
+// RPC settings removed: using fixed Helius RPC endpoint in backend
+
+// Jupiter swap UI moved to swap.js
+
+// ========== WALLET SETTINGS API ==========
+async function saveWalletSettings(settings) {
+  try {
+    const response = await fetch('/api/settings/wallet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+
+    if (!response.ok) throw new Error('Ошибка сохранения настроек кошелька');
+    console.log('Wallet settings saved');
+  } catch (error) {
+    console.error('Error saving wallet settings:', error);
+  }
+}
+
+async function loadWalletSettings() {
+  try {
+    const response = await fetch('/api/settings/wallet');
+    if (!response.ok) return;
+
+    const settings = await response.json();
+    if (settings && settings.connected && settings.publicKey) {
+      walletPublicKey = settings.publicKey;
+      // Try to reconnect (user will need to approve in Phantom)
+      const provider = getPhantomProvider();
+      if (provider && provider.isConnected) {
+        phantomWallet = provider;
+        updateWalletUI();
+        await updateWalletBalance();
+      }
+    }
+  } catch (error) {
+    console.error('Error loading wallet settings:', error);
+  }
+}
+
 

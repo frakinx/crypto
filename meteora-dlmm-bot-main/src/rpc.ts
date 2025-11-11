@@ -1,8 +1,8 @@
-import { Connection, clusterApiUrl } from '@solana/web3.js';
-import { CONFIG } from './config.js';
+import { Connection } from '@solana/web3.js';
+
+// Fixed Helius endpoint for all RPC calls
+const HELIUS_RPC_URL = 'https://mainnet.helius-rpc.com/?api-key=f1ebee20-d1aa-46f8-b5b9-64f3ab23db3f';
 
 export function getConnection(): Connection {
-  const url = CONFIG.rpcUrl.includes('http') ? CONFIG.rpcUrl : clusterApiUrl(CONFIG.rpcUrl as any);
-  // Use confirmed/processed commitment for faster copy-trading feedback; tune to 'confirmed' for reliability
-  return new Connection(url, { commitment: 'confirmed' });
+  return new Connection(HELIUS_RPC_URL, { commitment: 'confirmed' });
 }
