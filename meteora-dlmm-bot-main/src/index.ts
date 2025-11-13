@@ -46,7 +46,10 @@ async function main() {
           dexes,
         });
 
-        if (!quote || !quote.routePlan || !quote.inAmount) {
+        const hasRoute = Array.isArray(quote.routePlan) && quote.routePlan.length > 0;
+        const quoteInAmount = quote.inAmount ?? quote.inputAmount;
+
+        if (!hasRoute || !quoteInAmount) {
           console.warn('No valid quote from Jupiter');
           continue;
         }
@@ -68,7 +71,7 @@ async function main() {
     } catch (e) {
       console.error('loop error', e);
     }
-  }, 10_000);
+  }, 30_000);
 }
 
 main().catch(err => {

@@ -23,7 +23,10 @@ export async function fetchDlmmPairs(): Promise<DlmmPair[]> {
   if (res.statusCode !== 200) {
     throw new Error('DLMM API error: ' + res.statusCode);
   }
-  const data = await res.body.json();
+  const data = (await res.body.json()) as unknown;
+  if (!Array.isArray(data)) {
+    throw new Error('DLMM API error: invalid response');
+  }
   // Expecting array of objects; keep only essentials
   return data.map((p: any) => ({
     address: p.address ?? p.lb_pair_address ?? p.id ?? '',

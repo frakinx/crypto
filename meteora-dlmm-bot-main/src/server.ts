@@ -6,6 +6,17 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import fs from 'fs';
 import { getConnection } from './rpc.js';
 import { getQuote as jupGetQuote, createSwapTransaction as jupCreateSwapTx } from './dex/jupiter.js';
+import { CONFIG } from './config.js';
+
+type TokenInfo = {
+  address: string;
+  symbol?: string;
+  name?: string;
+  decimals?: number;
+  logoURI?: string;
+  tags?: string[];
+  verified?: boolean;
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,6 +31,104 @@ app.use(express.static(path.join(__dirname, '../public')));
 // Путь к файлу настроек
 const SETTINGS_DIR = path.join(process.cwd(), 'data');
 const SETTINGS_FILE = path.join(SETTINGS_DIR, 'settings.json');
+
+// Кэш для списка токенов (обновляется не чаще раза в час)
+const TOKEN_CACHE_TTL = 60 * 60 * 1000;
+let cachedTokens: { data: TokenInfo[]; fetchedAt: number } | null = null;
+
+function buildJupiterHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { accept: 'application/json' };
+  if (CONFIG.jup.apiKey) {
+    headers['x-api-key'] = CONFIG.jup.apiKey;
+  }
+  return headers;
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { headers: buildJupiterHeaders() });
+  if (!res.ok) {
+    throw new Error(`Request failed (${res.status}): ${url}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+function normalizeToken(entry: any): TokenInfo | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const address = typeof entry.id === 'string' ? entry.id : typeof entry.address === 'string' ? entry.address : null;
+  if (!address) return null;
+  const symbol = typeof entry.symbol === 'string' ? entry.symbol.toUpperCase() : undefined;
+  const name = typeof entry.name === 'string' ? entry.name : undefined;
+  const decimals = typeof entry.decimals === 'number' ? entry.decimals : undefined;
+  const logoURI =
+    (typeof entry.icon === 'string' && entry.icon) ||
+    (typeof entry.logoURI === 'string' && entry.logoURI) ||
+    (typeof entry.logo === 'string' && entry.logo) ||
+    undefined;
+  const tags = Array.isArray(entry.tags) ? entry.tags.map(String) : undefined;
+  const verified = typeof entry.isVerified === 'boolean' ? entry.isVerified : tags?.includes('verified');
+  return {
+    address,
+    symbol,
+    name,
+    decimals,
+    logoURI,
+    tags,
+    verified,
+  };
+}
+
+async function loadTokensFromJupiter(): Promise<TokenInfo[]> {
+  const base = CONFIG.jup.tokensBase;
+  const sources: Array<{ path: string; params?: Record<string, string> }> = [
+    { path: '/toporganicscore/24h', params: { limit: '100' } },
+    { path: '/toptraded/24h', params: { limit: '100' } },
+    { path: '/toptrending/24h', params: { limit: '100' } },
+    { path: '/recent', params: { limit: '100' } },
+  ];
+
+  const results = await Promise.allSettled(
+    sources.map(async source => {
+      const url = new URL(base + source.path);
+      if (source.params) {
+        Object.entries(source.params).forEach(([key, value]) => url.searchParams.set(key, value));
+      }
+      return fetchJson<any[]>(url.toString());
+    }),
+  );
+
+  const tokensMap = new Map<string, TokenInfo>();
+  for (const result of results) {
+    if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+      for (const entry of result.value) {
+        const token = normalizeToken(entry);
+        if (token?.address && !tokensMap.has(token.address)) {
+          tokensMap.set(token.address, token);
+        }
+      }
+    }
+  }
+
+  if (tokensMap.size === 0) {
+    throw new Error('Failed to load tokens from Jupiter tokens API');
+  }
+
+  return Array.from(tokensMap.values());
+}
+
+async function loadFallbackTokenList(): Promise<TokenInfo[]> {
+  const fallbackUrl = 'https://raw.githubusercontent.com/solana-labs/token-list/master/src/tokens/solana.tokenlist.json';
+  const fallbackResponse = await fetch(fallbackUrl);
+  if (!fallbackResponse.ok) {
+    throw new Error(`Fallback token list returned status ${fallbackResponse.status}`);
+  }
+  const fallbackData = await fallbackResponse.json();
+  const list = Array.isArray(fallbackData?.tokens) ? fallbackData.tokens : [];
+  return list
+    .map(normalizeToken)
+
+    .filter((token: TokenInfo | null): token is TokenInfo => !!token)
+    .slice(0, 5000); // cap to keep payload reasonable
+}
 
 // Создаем директорию data если её нет
 if (!fs.existsSync(SETTINGS_DIR)) {
@@ -58,6 +167,58 @@ function saveSettings(newSettings: any) {
     throw error;
   }
 }
+
+// API endpoint для списка токенов (используется автопоиском на фронтенде)
+app.get('/api/tokens', async (_req, res) => {
+  try {
+    const now = Date.now();
+    if (cachedTokens && now - cachedTokens.fetchedAt < TOKEN_CACHE_TTL) {
+      return res.json(cachedTokens.data);
+    }
+
+    let tokens: TokenInfo[] = [];
+    try {
+      tokens = await loadTokensFromJupiter();
+      console.log(`Loaded ${tokens.length} tokens from Jupiter Tokens API`);
+    } catch (primaryError) {
+      console.warn('Failed to load tokens from Jupiter API, falling back to public list:', primaryError);
+      tokens = await loadFallbackTokenList();
+      console.log(`Loaded ${tokens.length} tokens from fallback list`);
+    }
+
+    cachedTokens = { data: tokens, fetchedAt: now };
+    res.json(tokens);
+  } catch (error) {
+    console.error('Error fetching token list:', error);
+    if (cachedTokens) {
+      console.log('Serving token list from stale cache due to error');
+      return res.json(cachedTokens.data);
+    }
+    res.status(500).json({ error: 'Failed to load token list' });
+  }
+});
+
+app.get('/api/tokens/search', async (req, res) => {
+  try {
+    const query = String(req.query.q ?? req.query.query ?? '').trim();
+    if (!query) {
+      return res.status(400).json({ error: 'query parameter is required' });
+    }
+    const url = new URL(`${CONFIG.jup.tokensBase}/search`);
+    url.searchParams.set('query', query);
+    const results = await fetchJson<any[]>(url.toString());
+    const mapped = Array.isArray(results)
+      ? results
+          .map(normalizeToken)
+          .filter((token): token is TokenInfo => !!token)
+          .slice(0, 50)
+      : [];
+    res.json(mapped);
+  } catch (error) {
+    console.error('Error searching tokens:', error);
+    res.status(500).json({ error: 'Failed to search tokens' });
+  }
+});
 
 // API endpoint для получения пулов
 app.get('/api/pools', async (req, res) => {
@@ -217,7 +378,13 @@ app.post('/api/jup/quote', async (req, res) => {
     res.json(quote);
   } catch (error) {
     console.error('Error getting Jupiter quote:', error);
-    res.status(500).json({ error: (error as Error).message || 'Quote failed' });
+    const message = (error as Error).message || 'Quote failed';
+    if (message.includes('ENOTFOUND') || message.includes('EAI_AGAIN')) {
+      return res.status(502).json({
+        error: 'DNS_ERROR: Не удалось разрешить lite-api.jup.ag. Проверьте DNS/VPN или задайте JUP_SWAP_BASE в .env на доступный прокси.',
+      });
+    }
+    res.status(500).json({ error: message });
   }
 });
 
