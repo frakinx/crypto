@@ -74,6 +74,89 @@ app.get('/api/pools', async (req, res) => {
   }
 });
 
+// API endpoint для получения детальной информации о пуле
+app.get('/api/pool/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    if (!address) {
+      return res.status(400).json({ error: 'Pool address is required' });
+    }
+
+    // Получаем детальную информацию о пуле
+    const poolResponse = await fetch(`https://dlmm-api.meteora.ag/pair/${address}`);
+    if (!poolResponse.ok) {
+      throw new Error(`HTTP error! status: ${poolResponse.status}`);
+    }
+    const poolData = await poolResponse.json();
+
+    // Получаем распределение ликвидности (bins)
+    let liquidityDistribution = null;
+    try {
+      const binsResponse = await fetch(`https://dlmm-api.meteora.ag/pair/${address}/bins`);
+      if (binsResponse.ok) {
+        liquidityDistribution = await binsResponse.json();
+      }
+    } catch (binsError) {
+      console.warn('Could not fetch bins data:', binsError);
+      // Продолжаем без данных о bins
+    }
+
+    // Получаем исторические данные о торговом объеме
+    let volumeHistory = null;
+    try {
+      // Пробуем разные возможные endpoints для получения исторических данных
+      const endpoints = [
+        `https://dlmm-api.meteora.ag/pair/${address}/volume/history`,
+        `https://dlmm-api.meteora.ag/pair/${address}/volume/daily`,
+        `https://dlmm-api.meteora.ag/pair/${address}/history`,
+        `https://dlmm-api.meteora.ag/pair/${address}/stats`,
+        `https://dlmm-api.meteora.ag/pair/${address}/volume`
+      ];
+      
+      for (const endpoint of endpoints) {
+        try {
+          const volumeResponse = await fetch(endpoint);
+          if (volumeResponse.ok) {
+            const data = await volumeResponse.json();
+            // Проверяем, что это действительно исторические данные (массив или объект с датами)
+            if (Array.isArray(data) || (typeof data === 'object' && data !== null && 
+                (data.history || data.daily || data.data || Object.keys(data).some(k => /^\d{4}-\d{2}-\d{2}/.test(k))))) {
+              volumeHistory = data;
+              console.log(`Volume history fetched from ${endpoint} for pool ${address}:`, volumeHistory);
+              break;
+            }
+          }
+        } catch (err) {
+          // Продолжаем пробовать другие endpoints
+          continue;
+        }
+      }
+      
+      if (!volumeHistory) {
+        console.log(`No volume history endpoint found for pool ${address}`);
+      }
+    } catch (volumeError) {
+      console.warn('Could not fetch volume history data:', volumeError);
+      // Продолжаем без исторических данных
+    }
+
+    // Логируем структуру данных пула для отладки
+    console.log(`Pool data keys for ${address}:`, Object.keys(poolData));
+    console.log(`Volume-related fields:`, Object.keys(poolData).filter(key => 
+      key.toLowerCase().includes('volume') || key.toLowerCase().includes('trade')
+    ));
+
+    res.json({
+      ...poolData,
+      liquidityDistribution,
+      volumeHistory
+    });
+  } catch (error) {
+    console.error('Error fetching pool details:', error);
+    res.status(500).json({ error: 'Failed to fetch pool details' });
+  }
+});
+
 // API endpoint для получения баланса кошелька
 app.get('/api/wallet/balance', async (req, res) => {
   try {

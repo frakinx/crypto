@@ -1052,6 +1052,222 @@ header h1 {
   border-color: #667eea;
   box-shadow: 0 0 0 4px rgba(102,126,234,0.15);
 }
+/* Pool Modal Styles */
+.pool-modal {
+  display: none;
+  position: fixed;
+  z-index: 2000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s;
+  overflow-y: auto;
+}
+
+.pool-modal.show {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.pool-modal-content {
+  background: #1a1a2e;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s;
+  position: relative;
+}
+
+.pool-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #2d2d44;
+  position: sticky;
+  top: 0;
+  background: #1a1a2e;
+  z-index: 10;
+}
+
+.pool-modal-header h2 {
+  margin: 0;
+  color: white;
+  font-size: 1.5em;
+}
+
+.pool-modal-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 28px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.pool-modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pool-modal-body {
+  padding: 24px;
+}
+
+.pool-modal-loading {
+  text-align: center;
+  padding: 40px;
+  color: white;
+  font-size: 1.1em;
+}
+
+.pool-modal-error {
+  background: #ffebee;
+  color: #c62828;
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+
+.pool-detail-info {
+  margin-bottom: 24px;
+}
+
+.pool-detail-name {
+  font-size: 1.5em;
+  font-weight: bold;
+  color: white;
+  margin-bottom: 8px;
+}
+
+.pool-detail-address {
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.liquidity-distribution-section {
+  margin-bottom: 30px;
+  background: #0f0f1e;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #2d2d44;
+}
+
+.liquidity-distribution-section h3 {
+  color: white;
+  font-size: 1.2em;
+  margin-bottom: 16px;
+}
+
+.liquidity-distribution-header {
+  margin-bottom: 16px;
+}
+
+.liquidity-pair-info {
+  color: white;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.liquidity-chart-container {
+  position: relative;
+  height: 300px;
+  margin-bottom: 16px;
+}
+
+.liquidity-legend {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-size: 0.9em;
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.trading-volume-section {
+  margin-bottom: 30px;
+  background: #0f0f1e;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #2d2d44;
+}
+
+.trading-volume-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.trading-volume-header h3 {
+  color: white;
+  font-size: 1.2em;
+  margin: 0;
+}
+
+.trading-volume-value {
+  color: white;
+  font-size: 1.8em;
+  font-weight: bold;
+}
+
+.trading-volume-chart-container {
+  position: relative;
+  height: 250px;
+}
+
+.pool-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.pool-detail-stat {
+  background: #0f0f1e;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #2d2d44;
+}
+
+.pool-detail-stat-label {
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8px;
+}
+
+.pool-detail-stat-value {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: white;
+}
+
 @media (max-width: 768px) {
   .tabs {
     flex-direction: column;
@@ -1085,6 +1301,33 @@ header h1 {
   .save-btn,
   .test-btn {
     width: 100%;
+  }
+
+  .pool-modal-content {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .liquidity-chart-container {
+    height: 250px;
+  }
+
+  .trading-volume-chart-container {
+    height: 200px;
+  }
+
+  .trading-volume-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .trading-volume-value {
+    font-size: 1.4em;
+  }
+
+  .pool-detail-stats {
+    grid-template-columns: 1fr;
   }
 }
 

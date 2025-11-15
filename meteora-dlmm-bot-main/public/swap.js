@@ -160,6 +160,9 @@ function buildTokenIndexes() {
       tokenIndexByAddress.set(String(t.address), t);
     }
   }
+  // Делаем доступным глобально для использования в других модулях
+  window.tokenIndexByAddress = tokenIndexByAddress;
+  window.tokenIndexBySymbol = tokenIndexBySymbol;
 }
 
 function searchTokens(query) {

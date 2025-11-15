@@ -352,6 +352,85 @@
     </div>
   </div>
 
+  <!-- Pool Detail Modal -->
+  <div id="poolModal" class="pool-modal">
+    <div class="pool-modal-content">
+      <div class="pool-modal-header">
+        <h2 id="poolModalTitle">Детали пула</h2>
+        <button class="pool-modal-close" id="closePoolModalBtn">&times;</button>
+      </div>
+      <div class="pool-modal-body">
+        <div id="poolModalLoading" class="pool-modal-loading">Загрузка данных...</div>
+        <div id="poolModalContent" style="display: none;">
+          <div class="pool-detail-info">
+            <div class="pool-detail-name" id="poolDetailName"></div>
+            <div class="pool-detail-address" id="poolDetailAddress"></div>
+          </div>
+          
+          <div class="liquidity-distribution-section">
+            <h3>Liquidity Distribution</h3>
+            <div class="liquidity-distribution-header">
+              <div class="liquidity-pair-info" id="liquidityPairInfo"></div>
+            </div>
+            <div class="liquidity-chart-container">
+              <canvas id="liquidityChart"></canvas>
+            </div>
+            <div class="liquidity-legend">
+              <div class="legend-item">
+                <span class="legend-color" style="background: #00D9FF;"></span>
+                <span id="legendTokenX"></span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-color" style="background: #8B5CF6;"></span>
+                <span id="legendTokenY"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="trading-volume-section">
+            <div class="trading-volume-header">
+              <h3>Trading Volume</h3>
+              <div class="trading-volume-value" id="tradingVolumeValue">$0</div>
+            </div>
+            <div class="trading-volume-chart-container">
+              <canvas id="tradingVolumeChart"></canvas>
+            </div>
+          </div>
+
+          <div class="pool-detail-stats">
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Bin Step</div>
+              <div class="pool-detail-stat-value" id="poolDetailBinStep"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Base Fee</div>
+              <div class="pool-detail-stat-value" id="poolDetailBaseFee"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Max Fee</div>
+              <div class="pool-detail-stat-value" id="poolDetailMaxFee"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Protocol Fee</div>
+              <div class="pool-detail-stat-value" id="poolDetailProtocolFee"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Dynamic Fee</div>
+              <div class="pool-detail-stat-value" id="poolDetailDynamicFee"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">24h Fee</div>
+              <div class="pool-detail-stat-value" id="poolDetail24hFee"></div>
+            </div>
+          </div>
+        </div>
+        <div id="poolModalError" class="pool-modal-error" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart.js for graphs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <!-- Solana Web3 (browser, for deserializing VersionedTransaction) -->
   <script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
   <script src="swap.js"></script>

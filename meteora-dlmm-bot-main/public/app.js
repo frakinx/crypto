@@ -619,7 +619,7 @@ function renderPools() {
     const baseFee = parseFloat(pool.base_fee_percentage || 0);
     
     return `
-      <div class="pool-card">
+      <div class="pool-card" data-pool-address="${pool.address}" style="cursor: pointer;">
         <div class="pool-header">
           <div class="pool-name">${pool.name || 'Unknown'}</div>
           ${pool.is_verified ? '<span class="pool-verified">✓ Verified</span>' : ''}
@@ -651,6 +651,16 @@ function renderPools() {
       </div>
     `;
   }).join('');
+
+  // Добавляем обработчики клика на карточки пулов
+  containerEl.querySelectorAll('.pool-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const address = card.getAttribute('data-pool-address');
+      if (address) {
+        openPoolModal(address);
+      }
+    });
+  });
   
   // Показываем/скрываем кнопку "Загрузить еще"
   if (hasMore) {
@@ -960,6 +970,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load saved settings on page load
   loadWalletSettings();
+
+  // Pool modal event listeners
+  const closePoolModalBtn = document.getElementById('closePoolModalBtn');
+  const poolModal = document.getElementById('poolModal');
+  if (closePoolModalBtn) {
+    closePoolModalBtn.addEventListener('click', closePoolModal);
+  }
+  if (poolModal) {
+    poolModal.addEventListener('click', (e) => {
+      if (e.target.id === 'poolModal') {
+        closePoolModal();
+      }
+    });
+  }
 
   // Check if Phantom is installed
   const provider = getPhantomProvider();
@@ -1297,6 +1321,764 @@ function showProxyStatus(message, type) {
 // RPC settings removed: using fixed Helius RPC endpoint in backend
 
 // Jupiter swap UI moved to swap.js
+
+// ========== POOL MODAL FUNCTIONALITY ==========
+let liquidityChart = null;
+let tradingVolumeChart = null;
+
+async function openPoolModal(poolAddress) {
+  const modal = document.getElementById('poolModal');
+  const loadingEl = document.getElementById('poolModalLoading');
+  const contentEl = document.getElementById('poolModalContent');
+  const errorEl = document.getElementById('poolModalError');
+  
+  modal.classList.add('show');
+  loadingEl.style.display = 'block';
+  contentEl.style.display = 'none';
+  errorEl.style.display = 'none';
+  
+  try {
+    const response = await fetch(`/api/pool/${poolAddress}`);
+    if (!response.ok) {
+      throw new Error('Ошибка загрузки данных пула');
+    }
+    
+    const poolData = await response.json();
+    
+    // Логируем полную структуру данных для отладки
+    console.log('Full pool data from API:', poolData);
+    console.log('Pool data structure:', {
+      name: poolData.name,
+      tokenX: poolData.tokenX,
+      tokenY: poolData.tokenY,
+      token_x: poolData.token_x,
+      token_y: poolData.token_y,
+      tokenXMint: poolData.tokenXMint,
+      tokenYMint: poolData.tokenYMint,
+      base_mint: poolData.base_mint,
+      quote_mint: poolData.quote_mint,
+      volumeHistory: poolData.volumeHistory,
+      volume_history: poolData.volume_history,
+      volume: poolData.volume,
+      trade_volume_24h: poolData.trade_volume_24h
+    });
+    
+    // Заполняем информацию о пуле
+    document.getElementById('poolDetailName').textContent = poolData.name || 'Unknown Pool';
+    document.getElementById('poolDetailAddress').textContent = poolData.address || poolAddress;
+    
+    // Заполняем статистику
+    document.getElementById('poolDetailBinStep').textContent = poolData.bin_step || poolData.binStep || '-';
+    document.getElementById('poolDetailBaseFee').textContent = formatPercent(parseFloat(poolData.base_fee_percentage || poolData.baseFee || 0));
+    document.getElementById('poolDetailMaxFee').textContent = formatPercent(parseFloat(poolData.max_fee_percentage || poolData.maxFee || 10));
+    document.getElementById('poolDetailProtocolFee').textContent = formatPercent(parseFloat(poolData.protocol_fee_percentage || poolData.protocolFee || 0));
+    document.getElementById('poolDetailDynamicFee').textContent = formatPercent(parseFloat(poolData.dynamic_fee_percentage || poolData.dynamicFee || 0));
+    document.getElementById('poolDetail24hFee').textContent = formatCurrency(parseFloat(poolData.fees_24h || poolData.fees24h || 0));
+    
+    // Получаем названия токенов - пробуем разные варианты
+    let tokenXName = poolData.tokenX?.symbol || poolData.token_x?.symbol || 
+                     poolData.tokenX?.name || poolData.token_x?.name ||
+                     poolData.baseToken?.symbol || poolData.base_token?.symbol ||
+                     poolData.baseToken?.name || poolData.base_token?.name ||
+                     poolData.token0?.symbol || poolData.token_0?.symbol ||
+                     poolData.token0?.name || poolData.token_0?.name;
+    
+    let tokenYName = poolData.tokenY?.symbol || poolData.token_y?.symbol ||
+                     poolData.tokenY?.name || poolData.token_y?.name ||
+                     poolData.quoteToken?.symbol || poolData.quote_token?.symbol ||
+                     poolData.quoteToken?.name || poolData.quote_token?.name ||
+                     poolData.token1?.symbol || poolData.token_1?.symbol ||
+                     poolData.token1?.name || poolData.token_1?.name;
+    
+    // Если не нашли, пытаемся извлечь из имени пула (формат: "TOKEN1-TOKEN2", "TOKEN1/TOKEN2", "TOKEN1 TOKEN2")
+    if (!tokenXName || !tokenYName) {
+      const poolName = poolData.name || '';
+      // Пробуем разные форматы: "TRUMP-USDC", "SOL/USDC", "TRUMP USDC"
+      const nameMatch = poolName.match(/^([A-Z0-9]+)[\s\-/]+([A-Z0-9]+)/i) || 
+                        poolName.match(/^([A-Za-z0-9]+)[\s\-/]+([A-Za-z0-9]+)/i);
+      if (nameMatch && nameMatch.length >= 3) {
+        if (!tokenXName) tokenXName = nameMatch[1].toUpperCase();
+        if (!tokenYName) tokenYName = nameMatch[2].toUpperCase();
+      }
+    }
+    
+    // Если все еще не нашли, пробуем получить из списка токенов (если доступен)
+    if ((!tokenXName || tokenXName === 'Token X' || tokenXName.length < 2) && window.tokenIndexByAddress) {
+      const mintX = poolData.tokenXMint || poolData.token_x_mint || poolData.base_mint;
+      if (mintX) {
+        const tokenX = window.tokenIndexByAddress.get(String(mintX));
+        if (tokenX && (tokenX.symbol || tokenX.name)) {
+          tokenXName = tokenX.symbol || tokenX.name;
+        }
+      }
+    }
+    
+    if ((!tokenYName || tokenYName === 'Token Y' || tokenYName.length < 2) && window.tokenIndexByAddress) {
+      const mintY = poolData.tokenYMint || poolData.token_y_mint || poolData.quote_mint;
+      if (mintY) {
+        const tokenY = window.tokenIndexByAddress.get(String(mintY));
+        if (tokenY && (tokenY.symbol || tokenY.name)) {
+          tokenYName = tokenY.symbol || tokenY.name;
+        }
+      }
+    }
+    
+    // Последняя попытка - используем mint адреса (первые 4 символа)
+    if (!tokenXName || tokenXName === 'Token X') {
+      tokenXName = poolData.tokenXMint?.substring(0, 4).toUpperCase() || poolData.token_x_mint?.substring(0, 4).toUpperCase() || 'Token X';
+    }
+    if (!tokenYName || tokenYName === 'Token Y') {
+      tokenYName = poolData.tokenYMint?.substring(0, 4).toUpperCase() || poolData.token_y_mint?.substring(0, 4).toUpperCase() || 'Token Y';
+    }
+    
+    const currentPrice = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 1);
+    
+    // Логируем найденные названия токенов
+    console.log('Found token names:', { tokenXName, tokenYName });
+    
+    document.getElementById('legendTokenX').textContent = tokenXName;
+    document.getElementById('legendTokenY').textContent = tokenYName;
+    document.getElementById('liquidityPairInfo').textContent = `${currentPrice.toFixed(2)} ${tokenXName}/${tokenYName}`;
+    
+    // Создаем график распределения ликвидности
+    if (poolData.liquidityDistribution && (poolData.liquidityDistribution.bins || poolData.liquidityDistribution)) {
+      const bins = poolData.liquidityDistribution.bins || poolData.liquidityDistribution;
+      createLiquidityChart(bins, tokenXName, tokenYName, currentPrice);
+    } else if (poolData.bins && Array.isArray(poolData.bins)) {
+      createLiquidityChart(poolData.bins, tokenXName, tokenYName, currentPrice);
+    } else {
+      // Если нет данных о bins, создаем график на основе доступных данных
+      createLiquidityChartFromPoolData(poolData, tokenXName, tokenYName, currentPrice);
+    }
+    
+    // Создаем график торгового объема
+    createTradingVolumeChart(poolData);
+    
+    loadingEl.style.display = 'none';
+    contentEl.style.display = 'block';
+  } catch (error) {
+    console.error('Error loading pool details:', error);
+    loadingEl.style.display = 'none';
+    errorEl.textContent = 'Ошибка загрузки данных: ' + error.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+function closePoolModal() {
+  const modal = document.getElementById('poolModal');
+  modal.classList.remove('show');
+  
+  // Уничтожаем графики при закрытии
+  if (liquidityChart) {
+    liquidityChart.destroy();
+    liquidityChart = null;
+  }
+  if (tradingVolumeChart) {
+    tradingVolumeChart.destroy();
+    tradingVolumeChart = null;
+  }
+}
+
+function createLiquidityChart(bins, tokenXName, tokenYName, currentPrice) {
+  const ctx = document.getElementById('liquidityChart');
+  if (!ctx) return;
+  
+  // Уничтожаем предыдущий график, если есть
+  if (liquidityChart) {
+    liquidityChart.destroy();
+  }
+  
+  // Обрабатываем данные bins
+  const processedData = processBinsData(bins, currentPrice);
+  
+  liquidityChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: processedData.labels,
+      datasets: [
+        {
+          label: tokenXName,
+          data: processedData.tokenXData,
+          backgroundColor: 'rgba(0, 217, 255, 0.7)',
+          borderColor: '#00D9FF',
+          borderWidth: 1,
+        },
+        {
+          label: tokenYName,
+          data: processedData.tokenYData,
+          backgroundColor: 'rgba(139, 92, 246, 0.7)',
+          borderColor: '#8B5CF6',
+          borderWidth: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false, // Используем кастомную легенду
+        },
+        tooltip: {
+          callbacks: {
+            title: function(context) {
+              return `Price: ${context[0].label}`;
+            },
+            label: function(context) {
+              const datasetLabel = context.dataset.label;
+              const value = context.parsed.y;
+              if (value > 0) {
+                return `${datasetLabel}: ${formatNumber(value)}`;
+              }
+              return '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: true,
+          title: {
+            display: true,
+            text: 'Price'
+          }
+        },
+        y: {
+          stacked: true,
+          title: {
+            display: true,
+            text: 'Liquidity'
+          },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+function createLiquidityChartFromPoolData(poolData, tokenXName, tokenYName, currentPrice) {
+  // Если нет данных о bins, создаем упрощенный график
+  const ctx = document.getElementById('liquidityChart');
+  if (!ctx) return;
+  
+  if (liquidityChart) {
+    liquidityChart.destroy();
+  }
+  
+  // Создаем примерные данные на основе текущей цены
+  const priceRange = currentPrice * 0.1; // 10% диапазон
+  const minPrice = currentPrice - priceRange;
+  const maxPrice = currentPrice + priceRange;
+  const steps = 20;
+  const stepSize = (maxPrice - minPrice) / steps;
+  
+  const labels = [];
+  const tokenXData = [];
+  const tokenYData = [];
+  
+  for (let i = 0; i < steps; i++) {
+    const price = minPrice + (stepSize * i);
+    labels.push(price.toFixed(2));
+    
+    // Создаем примерное распределение (больше ликвидности около текущей цены)
+    const distanceFromCurrent = Math.abs(price - currentPrice) / currentPrice;
+    const liquidityFactor = Math.max(0, 1 - distanceFromCurrent * 2);
+    
+    if (price < currentPrice) {
+      tokenXData.push(liquidityFactor * 100);
+      tokenYData.push(0);
+    } else {
+      tokenXData.push(0);
+      tokenYData.push(liquidityFactor * 100);
+    }
+  }
+  
+  liquidityChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: tokenXName,
+          data: tokenXData,
+          backgroundColor: 'rgba(0, 217, 255, 0.7)',
+          borderColor: '#00D9FF',
+          borderWidth: 1,
+        },
+        {
+          label: tokenYName,
+          data: tokenYData,
+          backgroundColor: 'rgba(139, 92, 246, 0.7)',
+          borderColor: '#8B5CF6',
+          borderWidth: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          callbacks: {
+            title: function(context) {
+              return `Price: ${context[0].label}`;
+            },
+            label: function(context) {
+              const datasetLabel = context.dataset.label;
+              const value = context.parsed.y;
+              if (value > 0) {
+                return `${datasetLabel}: ${formatNumber(value)}`;
+              }
+              return '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: true,
+          title: {
+            display: true,
+            text: 'Price'
+          }
+        },
+        y: {
+          stacked: true,
+          title: {
+            display: true,
+            text: 'Liquidity'
+          },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+function processBinsData(bins, currentPrice) {
+  // Обрабатываем данные bins для отображения на графике
+  if (!Array.isArray(bins) || bins.length === 0) {
+    return { labels: [], tokenXData: [], tokenYData: [] };
+  }
+  
+  // Сортируем bins по цене
+  const sortedBins = bins
+    .filter(bin => bin.liquidityX > 0 || bin.liquidityY > 0)
+    .sort((a, b) => parseFloat(a.price || 0) - parseFloat(b.price || 0));
+  
+  const labels = [];
+  const tokenXData = [];
+  const tokenYData = [];
+  
+  sortedBins.forEach(bin => {
+    const price = parseFloat(bin.price || 0);
+    const liquidityX = parseFloat(bin.liquidityX || bin.liquidity_x || 0);
+    const liquidityY = parseFloat(bin.liquidityY || bin.liquidity_y || 0);
+    
+    labels.push(price.toFixed(2));
+    tokenXData.push(liquidityX);
+    tokenYData.push(liquidityY);
+  });
+  
+  return { labels, tokenXData, tokenYData };
+}
+
+function createTradingVolumeChart(poolData) {
+  const ctx = document.getElementById('tradingVolumeChart');
+  if (!ctx) return;
+  
+  // Уничтожаем предыдущий график, если есть
+  if (tradingVolumeChart) {
+    tradingVolumeChart.destroy();
+  }
+  
+  // Получаем данные о торговом объеме из API
+  const volume24h = parseFloat(poolData.trade_volume_24h || poolData.volume_24h || poolData.volume?.hour_24 || 0);
+  
+  // Отображаем текущее значение
+  document.getElementById('tradingVolumeValue').textContent = formatCurrency(volume24h);
+  
+  const labels = [];
+  const volumeData = [];
+  
+  // Логируем структуру данных для отладки
+  console.log('Volume data from API:', {
+    volumeHistory: poolData.volumeHistory,
+    volume_history: poolData.volume_history,
+    volume: poolData.volume,
+    daily_volume: poolData.daily_volume,
+    volume_by_day: poolData.volume_by_day,
+    trade_volume_24h: poolData.trade_volume_24h
+  });
+  
+  // Используем только реальные данные из API Meteora
+  let foundData = false;
+  
+  // Вариант 1: volumeHistory из API (массив)
+  if (poolData.volumeHistory && Array.isArray(poolData.volumeHistory) && poolData.volumeHistory.length > 0) {
+    console.log('Using volumeHistory from API');
+    poolData.volumeHistory.forEach(item => {
+      const date = new Date(item.date || item.timestamp * 1000 || item.time * 1000 || item.day || item.timestamp);
+      if (!isNaN(date.getTime())) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames[date.getMonth()];
+        const day = date.getDate().toString().padStart(2, '0');
+        labels.push(`${month} ${day}`);
+        const vol = parseFloat(item.volume || item.value || item.amount || item.total_volume || item.volume_usd || 0);
+        volumeData.push(vol);
+      }
+    });
+    foundData = labels.length > 0;
+  }
+  
+  // Вариант 2: volume_history (альтернативное поле)
+  if (!foundData && poolData.volume_history && Array.isArray(poolData.volume_history) && poolData.volume_history.length > 0) {
+    console.log('Using volume_history from API');
+    poolData.volume_history.forEach(item => {
+      const date = new Date(item.date || item.timestamp * 1000 || item.time * 1000 || item.day || item.timestamp);
+      if (!isNaN(date.getTime())) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames[date.getMonth()];
+        const day = date.getDate().toString().padStart(2, '0');
+        labels.push(`${month} ${day}`);
+        const vol = parseFloat(item.volume || item.value || item.amount || item.total_volume || item.volume_usd || 0);
+        volumeData.push(vol);
+      }
+    });
+    foundData = labels.length > 0;
+  }
+  
+  // Вариант 3: volume как объект с периодами времени (min_30, hour_1 и т.д.) из API
+  if (!foundData && poolData.volume && typeof poolData.volume === 'object' && !Array.isArray(poolData.volume)) {
+    console.log('Volume object found, checking structure...');
+    console.log('Volume object structure:', poolData.volume);
+    console.log('Volume object keys:', Object.keys(poolData.volume));
+    
+    const volumeKeys = Object.keys(poolData.volume);
+    
+    // Проверяем, являются ли ключи периодами времени (min_30, hour_1 и т.д.)
+    const isTimePeriods = volumeKeys.some(key => 
+      /^(min_|hour_|day_|week_|month_)/.test(key)
+    );
+    
+    if (isTimePeriods) {
+      console.log('Using volume data with time periods from API');
+      
+      // Порядок периодов для сортировки
+      const periodOrder = {
+        'min_30': 1,
+        'hour_1': 2,
+        'hour_2': 3,
+        'hour_4': 4,
+        'hour_12': 5,
+        'hour_24': 6,
+        'day_1': 7,
+        'day_7': 8,
+        'week_1': 9,
+        'month_1': 10
+      };
+      
+      // Функция для форматирования названия периода
+      const formatPeriodLabel = (key) => {
+        if (key.startsWith('min_')) {
+          const mins = key.replace('min_', '');
+          return `${mins}m`;
+        } else if (key.startsWith('hour_')) {
+          const hours = key.replace('hour_', '');
+          return `${hours}h`;
+        } else if (key.startsWith('day_')) {
+          const days = key.replace('day_', '');
+          return `${days}d`;
+        } else if (key.startsWith('week_')) {
+          const weeks = key.replace('week_', '');
+          return `${weeks}w`;
+        } else if (key.startsWith('month_')) {
+          const months = key.replace('month_', '');
+          return `${months}mo`;
+        }
+        return key;
+      };
+      
+      // Сортируем ключи по порядку периодов
+      const sortedKeys = volumeKeys
+        .filter(key => /^(min_|hour_|day_|week_|month_)/.test(key))
+        .sort((a, b) => {
+          const orderA = periodOrder[a] || 999;
+          const orderB = periodOrder[b] || 999;
+          return orderA - orderB;
+        });
+      
+      sortedKeys.forEach(key => {
+        const vol = parseFloat(poolData.volume[key] || 0);
+        if (vol > 0) {
+          labels.push(formatPeriodLabel(key));
+          volumeData.push(vol);
+        }
+      });
+      
+      foundData = labels.length > 0;
+      console.log('Added volume data by periods:', { labels, volumeData });
+    } else {
+      // Пытаемся найти ключи, которые выглядят как даты
+      const dateKeys = volumeKeys.filter(key => {
+        return /^\d{4}-\d{2}-\d{2}/.test(key) || /^\d{10,13}$/.test(key);
+      });
+      
+      console.log('Date-like keys found:', dateKeys);
+      
+      if (dateKeys.length > 0) {
+        dateKeys.forEach(key => {
+          let date;
+          if (/^\d{4}-\d{2}-\d{2}/.test(key)) {
+            date = new Date(key);
+          } else {
+            date = new Date(parseInt(key) * (key.length === 10 ? 1000 : 1));
+          }
+          if (!isNaN(date.getTime())) {
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const month = monthNames[date.getMonth()];
+            const day = date.getDate().toString().padStart(2, '0');
+            labels.push(`${month} ${day}`);
+            const vol = parseFloat(poolData.volume[key] || 0);
+            volumeData.push(vol);
+            console.log(`Added data point: ${month} ${day} = ${vol}`);
+          }
+        });
+        foundData = labels.length > 0;
+      } else {
+        // Если значения - это объекты с датами
+        const firstKey = volumeKeys[0];
+        const firstValue = poolData.volume[firstKey];
+        
+        if (typeof firstValue === 'object' && firstValue !== null) {
+          console.log('Values are objects, trying to extract dates from them');
+          volumeKeys.forEach(key => {
+            const value = poolData.volume[key];
+            if (value && typeof value === 'object') {
+              const dateStr = value.date || value.timestamp || value.day || value.time || key;
+              const date = new Date(dateStr || (typeof dateStr === 'number' ? dateStr * 1000 : dateStr));
+              if (!isNaN(date.getTime())) {
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const month = monthNames[date.getMonth()];
+                const day = date.getDate().toString().padStart(2, '0');
+                labels.push(`${month} ${day}`);
+                const vol = parseFloat(value.volume || value.value || value.amount || value.total_volume || value.volume_usd || 0);
+                volumeData.push(vol);
+              }
+            }
+          });
+          foundData = labels.length > 0;
+        }
+      }
+    }
+  }
+  
+  // Вариант 4: daily_volume или volume_by_day из API
+  if (!foundData && (poolData.daily_volume || poolData.volume_by_day)) {
+    console.log('Using daily_volume or volume_by_day from API');
+    const dailyData = poolData.daily_volume || poolData.volume_by_day;
+    if (Array.isArray(dailyData)) {
+      dailyData.forEach(item => {
+        const date = new Date(item.date || item.day || item.timestamp * 1000 || item.timestamp);
+        if (!isNaN(date.getTime())) {
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const month = monthNames[date.getMonth()];
+          const day = date.getDate().toString().padStart(2, '0');
+          labels.push(`${month} ${day}`);
+          const vol = parseFloat(item.volume || item.value || item.volume_usd || 0);
+          volumeData.push(vol);
+        }
+      });
+      foundData = labels.length > 0;
+    }
+  }
+  
+  // Вариант 5: Используем данные из volumeHistory, если они пришли с сервера
+  if (!foundData && poolData.volumeHistory && (Array.isArray(poolData.volumeHistory) || typeof poolData.volumeHistory === 'object')) {
+    console.log('Using volumeHistory from server response');
+    let historyData = poolData.volumeHistory;
+    
+    // Если это объект, пробуем найти массив внутри
+    if (typeof historyData === 'object' && !Array.isArray(historyData)) {
+      // Пробуем найти массив данных внутри объекта
+      if (historyData.data && Array.isArray(historyData.data)) {
+        historyData = historyData.data;
+      } else if (historyData.history && Array.isArray(historyData.history)) {
+        historyData = historyData.history;
+      } else if (historyData.volumes && Array.isArray(historyData.volumes)) {
+        historyData = historyData.volumes;
+      } else {
+        // Пробуем использовать объект как массив пар ключ-значение
+        historyData = Object.entries(historyData).map(([key, value]) => ({ date: key, volume: value }));
+      }
+    }
+    
+    if (Array.isArray(historyData) && historyData.length > 0) {
+      historyData.forEach(item => {
+        const date = new Date(item.date || item.timestamp * 1000 || item.time * 1000 || item.day || item.timestamp || item[0]);
+        if (!isNaN(date.getTime())) {
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const month = monthNames[date.getMonth()];
+          const day = date.getDate().toString().padStart(2, '0');
+          labels.push(`${month} ${day}`);
+          const vol = parseFloat(item.volume || item.value || item.amount || item.total_volume || item.volume_usd || item[1] || 0);
+          volumeData.push(vol);
+        }
+      });
+      foundData = labels.length > 0;
+    }
+  }
+  
+  // Если нет реальных данных из API, не показываем график
+  if (!foundData || labels.length === 0 || volumeData.length === 0) {
+    console.warn('No volume history data available from Meteora API');
+    console.warn('Available volume fields:', Object.keys(poolData).filter(key => 
+      key.toLowerCase().includes('volume') || key.toLowerCase().includes('trade')
+    ));
+    // Скрываем график, если нет данных
+    const chartContainer = document.querySelector('.trading-volume-chart-container');
+    if (chartContainer) {
+      chartContainer.style.display = 'none';
+    }
+    // Скрываем всю секцию, если нет данных
+    const volumeSection = document.querySelector('.trading-volume-section');
+    if (volumeSection) {
+      volumeSection.style.display = 'none';
+    }
+    return;
+  }
+  
+  // Показываем контейнер графика
+  const chartContainer = document.querySelector('.trading-volume-chart-container');
+  if (chartContainer) {
+    chartContainer.style.display = 'block';
+  }
+  
+  // Показываем секцию
+  const volumeSection = document.querySelector('.trading-volume-section');
+  if (volumeSection) {
+    volumeSection.style.display = 'block';
+  }
+  
+  console.log('Building chart with data:', { labels, volumeData, count: labels.length });
+  
+  // Если это периоды времени, данные уже отсортированы, сортировка не нужна
+  // Если это даты, сортируем по дате
+  const isPeriods = labels.some(label => /^\d+[mhdwmo]$/.test(label));
+  
+  if (!isPeriods) {
+    // Сортируем данные по дате только если это не периоды
+    const combined = labels.map((label, index) => ({ label, volume: volumeData[index] }));
+    combined.sort((a, b) => {
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const aParts = a.label.split(' ');
+      const bParts = b.label.split(' ');
+      const aMonth = monthNames.indexOf(aParts[0]);
+      const bMonth = monthNames.indexOf(bParts[0]);
+      const aDay = parseInt(aParts[1]);
+      const bDay = parseInt(bParts[1]);
+      
+      if (aMonth !== bMonth) return aMonth - bMonth;
+      return aDay - bDay;
+    });
+    
+    labels.length = 0;
+    volumeData.length = 0;
+    combined.forEach(item => {
+      labels.push(item.label);
+      volumeData.push(item.volume);
+    });
+  }
+  
+  tradingVolumeChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Trading Volume',
+        data: volumeData,
+        borderColor: '#FF6B6B',
+        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#FF6B6B',
+        pointBorderColor: '#FFFFFF',
+        pointBorderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        intersect: false,
+        mode: 'index'
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 12,
+          titleColor: '#fff',
+          bodyColor: '#fff',
+          borderColor: '#FF6B6B',
+          borderWidth: 1,
+          callbacks: {
+            title: function(context) {
+              const label = context[0].label;
+              // Если это период времени, показываем его как есть
+              if (/^\d+[mhdwmo]$/.test(label)) {
+                return `Period: ${label}`;
+              }
+              // Если это дата, показываем как дату
+              return `Date: ${label}`;
+            },
+            label: function(context) {
+              return formatCurrency(context.parsed.y);
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            display: false
+          },
+          ticks: {
+            color: 'rgba(255, 255, 255, 0.7)',
+            maxRotation: labels.some(l => /^\d+[mhdwmo]$/.test(l)) ? 0 : 45,
+            minRotation: labels.some(l => /^\d+[mhdwmo]$/.test(l)) ? 0 : 45
+          },
+          title: {
+            display: true,
+            text: labels.some(l => /^\d+[mhdwmo]$/.test(l)) ? 'Time Period' : 'Date',
+            color: 'rgba(255, 255, 255, 0.7)'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)',
+            drawBorder: false
+          },
+          ticks: {
+            color: 'rgba(255, 255, 255, 0.7)',
+            callback: function(value) {
+              return formatCurrency(value);
+            }
+          }
+        }
+      }
+    }
+  });
+}
 
 // ========== WALLET SETTINGS API ==========
 async function saveWalletSettings(settings) {
