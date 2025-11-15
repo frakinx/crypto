@@ -1,4 +1,4 @@
-import { Connection, Keypair, sendAndConfirmTransaction, VersionedTransaction } from '@solana/web3.js';
+import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
 
 export async function signAndSend(
   connection: Connection,
@@ -6,6 +6,16 @@ export async function signAndSend(
   tx: VersionedTransaction,
 ): Promise<string> {
   tx.sign([kp]);
-  const sig = await sendAndConfirmTransaction(connection, tx, { signers: [kp] as any });
+  const latestBlockhash = await connection.getLatestBlockhash();
+  const sig = await connection.sendRawTransaction(tx.serialize(), {
+    skipPreflight: false,
+  });
+  await connection.confirmTransaction(
+    {
+      signature: sig,
+      ...latestBlockhash,
+    },
+    'confirmed',
+  );
   return sig;
 }

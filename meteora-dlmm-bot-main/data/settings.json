@@ -2,5 +2,13 @@
   "wallet": {
     "publicKey": "E3KJC2D4QJvG2RFeLi6qABDA2y4nUpP8fSnRxqwe7sC7",
     "connected": true
+  },
+  "proxy": {
+    "enabled": true,
+    "type": "http",
+    "host": "https://1.1.1.1/dns-query",
+    "port": 53,
+    "username": null,
+    "password": null
   }
 }

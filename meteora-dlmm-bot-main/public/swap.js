@@ -9,6 +9,132 @@ const TOP_TOKENS = {
   USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
 };
 
+const TOKEN_CACHE_KEY = 'jupiter-token-list';
+const TOKEN_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24h
+
+function normalizeTokenShape(token) {
+  if (!token || typeof token !== 'object') return null;
+  const address = token.address || token.id;
+  if (!address) return null;
+  const symbol = token.symbol ? String(token.symbol).toUpperCase() : '';
+  const name = token.name ? String(token.name) : '';
+  const decimals = typeof token.decimals === 'number' ? token.decimals : undefined;
+  const logoURI = token.logoURI || token.icon || token.logo || undefined;
+  const tags = Array.isArray(token.tags) ? token.tags : undefined;
+  const verified =
+    typeof token.verified === 'boolean'
+      ? token.verified
+      : typeof token.isVerified === 'boolean'
+        ? token.isVerified
+        : Array.isArray(tags) && tags.includes('verified');
+  return {
+    address,
+    symbol,
+    name,
+    decimals,
+    logoURI,
+    tags,
+    verified,
+  };
+}
+
+function buildTokenIndexes() {
+  tokenIndexBySymbol.clear();
+  tokenIndexByAddress.clear();
+  for (const raw of tokenList) {
+    const token = normalizeTokenShape(raw);
+    if (!token) continue;
+    tokenIndexByAddress.set(token.address, token);
+    if (token.symbol) {
+      tokenIndexBySymbol.set(token.symbol.toLowerCase(), token);
+    }
+  }
+}
+
+function persistTokenCache() {
+  try {
+    localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ data: tokenList, timestamp: Date.now() }));
+  } catch (_) {
+    // ignore quota errors
+  }
+}
+
+function setTokenList(tokens, { persist = false } = {}) {
+  tokenList = [];
+  if (Array.isArray(tokens)) {
+    for (const entry of tokens) {
+      const normalized = normalizeTokenShape(entry);
+      if (normalized) {
+        tokenList.push(normalized);
+      }
+    }
+  }
+  // Sort by symbol then name for stable UX
+  tokenList.sort((a, b) => {
+    const left = (a.symbol || a.name || a.address || '').toLowerCase();
+    const right = (b.symbol || b.name || b.address || '').toLowerCase();
+    return left.localeCompare(right);
+  });
+  buildTokenIndexes();
+  if (persist) {
+    persistTokenCache();
+  }
+}
+
+function mergeTokenList(tokens, { persist = false } = {}) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return;
+  const index = new Map(tokenList.map(t => [t.address, t]));
+  let changed = false;
+  for (const entry of tokens) {
+    const normalized = normalizeTokenShape(entry);
+    if (!normalized) continue;
+    if (index.has(normalized.address)) {
+      const existing = index.get(normalized.address);
+      const updated = { ...existing, ...normalized };
+      index.set(normalized.address, updated);
+    } else {
+      index.set(normalized.address, normalized);
+      changed = true;
+    }
+  }
+  if (changed) {
+    tokenList = Array.from(index.values());
+    tokenList.sort((a, b) => {
+      const left = (a.symbol || a.name || a.address || '').toLowerCase();
+      const right = (b.symbol || b.name || b.address || '').toLowerCase();
+      return left.localeCompare(right);
+    });
+  } else {
+    tokenList = tokenList.map(t => index.get(t.address) ?? t);
+  }
+  buildTokenIndexes();
+  if (persist) {
+    persistTokenCache();
+  }
+}
+
+function searchTokensLocal(query) {
+  if (!query || query.length < 2) return [];
+  const lower = query.toLowerCase();
+  return tokenList
+    .filter(
+      t =>
+        (t.symbol && t.symbol.toLowerCase().includes(lower)) ||
+        (t.name && t.name.toLowerCase().includes(lower)) ||
+        (t.address && t.address.toLowerCase().includes(lower)),
+    )
+    .slice(0, 10);
+}
+
+async function fetchTokenSuggestions(query) {
+  const response = await fetch(`/api/tokens/search?q=${encodeURIComponent(query)}`);
+  if (!response.ok) {
+    throw new Error(`Token search failed with status ${response.status}`);
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data : [];
+}
+
 function initJupiterSwap() {
   const getQuoteBtn = document.getElementById('jupGetQuoteBtn');
   const swapBtn = document.getElementById('jupSwapBtn');
@@ -56,8 +182,30 @@ function showJupSwapStatus(message, type) {
   el.querySelector('.status-message').textContent = message;
 }
 
+function showTokenListStatus(message, type) {
+  const statusEl = document.getElementById('swap-status');
+  if (!statusEl) return;
+  statusEl.style.display = 'block';
+  statusEl.className = `rpc-status ${type}`;
+  statusEl.dataset.source = 'token-list';
+  const msgEl = statusEl.querySelector('.status-message');
+  if (msgEl) {
+    msgEl.textContent = message;
+  }
+}
+
+function hideTokenListStatus() {
+  const statusEl = document.getElementById('swap-status');
+  if (statusEl && statusEl.dataset.source === 'token-list') {
+    statusEl.style.display = 'none';
+    delete statusEl.dataset.source;
+  }
+}
+
 async function handleGetJupQuote() {
   try {
+    hideTokenListStatus();
+
     // Ensure mints are resolved even if user typed symbols without selecting from dropdown
     const inputMint = (ensureMintSelected('input') || document.getElementById('inputMint')?.value || '').trim();
     const outputMint = (ensureMintSelected('output') || document.getElementById('outputMint')?.value || '').trim();
@@ -103,32 +251,43 @@ async function handleGetJupQuote() {
       const outputAmount = data.outputAmount ?? data.outAmount ?? '—';
       swapStatus.style.display = 'block';
       swapStatus.className = 'rpc-status success';
+      swapStatus.dataset.source = 'quote';
       swapStatus.querySelector('.status-message').textContent = `✅ Quote received: ${inputAmount} → ${outputAmount}`;
     }
   } catch (err) {
     console.error('Jupiter quote error:', err);
-    showJupQuoteStatus('Ошибка котировки: ' + (err.message || 'Unknown'), 'error');
+    const rawMessage = err?.message || 'Unknown';
+    let humanMessage = `❌ Ошибка котировки: ${rawMessage}`;
+    if (/DNS_ERROR/.test(rawMessage)) {
+      humanMessage = '❌ Не удалось подключиться к lite-api.jup.ag. Проверьте DNS/прокси или задайте JUP_SWAP_BASE на доступный endpoint.';
+    } else if (/ENOTFOUND|EAI_AGAIN|ENETUNREACH/.test(rawMessage)) {
+      humanMessage = '❌ Не удалось подключиться к lite-api.jup.ag. Проверьте DNS/прокси или установите альтернативный endpoint в настройках.';
+    } else if (rawMessage.includes('Failed to fetch')) {
+      humanMessage = '❌ Не удалось обратиться к серверу котировок. Проверьте интернет-соединение или VPN.';
+    }
+    showJupQuoteStatus(humanMessage, 'error');
     const swapStatus = document.getElementById('swap-status');
     if (swapStatus) {
       swapStatus.style.display = 'block';
       swapStatus.className = 'rpc-status error';
-      swapStatus.querySelector('.status-message').textContent = '❌ Failed to get quote';
+      swapStatus.dataset.source = 'quote';
+      const msgEl = swapStatus.querySelector('.status-message');
+      if (msgEl) {
+        msgEl.textContent = humanMessage;
+      }
     }
   }
 }
 
 // ----- Token search / list loading -----
 async function loadTokenList() {
-  const CACHE_KEY = 'jupiter-token-list';
-  const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24h
-
   try {
-    const cached = localStorage.getItem(CACHE_KEY);
+    const cached = localStorage.getItem(TOKEN_CACHE_KEY);
     if (cached) {
       const { data, timestamp } = JSON.parse(cached);
-      if (Date.now() - timestamp < CACHE_DURATION) {
-        tokenList = data;
-        buildTokenIndexes();
+      if (Date.now() - timestamp < TOKEN_CACHE_DURATION) {
+        setTokenList(data);
+        hideTokenListStatus();
         console.log('Loaded tokens from cache:', tokenList.length);
         return;
       }
@@ -136,17 +295,21 @@ async function loadTokenList() {
   } catch (_) {}
 
   try {
-    const response = await fetch('https://token.jup.ag/all');
-    tokenList = await response.json();
-    buildTokenIndexes();
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ data: tokenList, timestamp: Date.now() }));
-    } catch (_) {}
+    const response = await fetch('/api/tokens');
+    if (!response.ok) {
+      throw new Error(`Token API responded with status ${response.status}`);
+    }
+    const fresh = await response.json();
+    setTokenList(fresh, { persist: true });
+    hideTokenListStatus();
     console.log('Loaded fresh tokens:', tokenList.length);
   } catch (error) {
     console.error('Failed to load token list:', error);
+    tokenList = [];
+    showTokenListStatus('❌ Не удалось загрузить список токенов. Проверьте доступ к lite-api.jup.ag или настройте DNS.', 'error');
   }
 }
+
 
 function buildTokenIndexes() {
   tokenIndexBySymbol.clear();
@@ -217,28 +380,52 @@ function initTokenSearch() {
     }
 
     let debounceId = null;
-    inputEl.addEventListener('input', function() {
-      const self = this;
+    let requestSeq = 0;
+    inputEl.addEventListener('input', function () {
+      const rawValue = String(this.value || '');
       clearTimeout(debounceId);
-      debounceId = setTimeout(() => {
-        // user typed manually, reset chips active for this role
+      debounceId = setTimeout(async () => {
+        const query = rawValue.trim();
         const role = inputEl.id.startsWith('input') ? 'input' : 'output';
         document.querySelectorAll(`.token-chip[data-role="${role}"]`).forEach(b => b.classList.remove('active'));
-        // While tokenList not loaded, show tip
+
         if (!tokenList || tokenList.length === 0) {
           dropdownEl.innerHTML = '<div class="token-option">Загрузка списка токенов...</div>';
           dropdownEl.style.display = 'block';
           return;
         }
-        const results = searchTokens(self.value);
-        // If user just typed symbol that exactly matches, prefill hidden mint
-        const exact = tokenIndexBySymbol.get(String(self.value || '').toLowerCase());
+
+        // Prefill on exact symbol hit
+        const exact = tokenIndexBySymbol.get(query.toLowerCase());
         if (exact) {
           mintEl.value = exact.address;
           infoEl.innerHTML = `${exact.name || ''} (${exact.address})`;
         }
-        renderResults(results);
-      }, 150);
+
+        const localResults = searchTokensLocal(query);
+        renderResults(localResults);
+
+        if (query.length < 2) {
+          return;
+        }
+
+        const seq = ++requestSeq;
+        try {
+          const remote = await fetchTokenSuggestions(query);
+          mergeTokenList(remote, { persist: false });
+          if (seq !== requestSeq) return;
+          const combinedMap = new Map();
+          for (const token of [...localResults, ...remote]) {
+            const normalized = normalizeTokenShape(token);
+            if (!normalized) continue;
+            combinedMap.set(normalized.address, normalized);
+          }
+          const combined = Array.from(combinedMap.values()).slice(0, 10);
+          renderResults(combined);
+        } catch (error) {
+          console.error('Token search request failed:', error);
+        }
+      }, 200);
     });
 
     // Show top tokens on focus
@@ -299,7 +486,7 @@ function resolveMintFromQuery(query) {
   const bySym = tokenList.find(t => String(t.symbol || '').toLowerCase() === sym);
   if (bySym) return bySym.address;
   // Fallback: first search result
-  const results = searchTokens(q);
+  const results = searchTokensLocal(q);
   return results.length ? results[0].address : null;
 }
 

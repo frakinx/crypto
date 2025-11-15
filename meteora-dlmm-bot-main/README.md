@@ -71,8 +71,10 @@ meteora-copybot/
 | `MAX_TRADE_QUOTE`    | Max input amount per trade (native units) |
 | `SLIPPAGE_BPS`       | Allowed slippage (100 = 1%) |
 | `DEX_WHITELIST`      | Restrict to certain DEX labels (e.g. `METEORA,Raydium`) |
-| `JUP_API_KEY`        | (Optional) Jupiter API key |
-| `QUOTE_API_BASE`     | Jupiter quote endpoint (defaults to `https://quote-api.jup.ag`) |
+| `JUP_API_KEY`        | (Optional) Jupiter API key (required for Pro endpoints) |
+| `JUP_SWAP_BASE`      | Jupiter Swap API base (defaults to `https://lite-api.jup.ag/swap/v1`) |
+| `JUP_TOKENS_BASE`    | Jupiter Tokens API base (defaults to `https://lite-api.jup.ag/tokens/v2`) |
+| `JUP_PRICE_ENDPOINT` | Jupiter Price API endpoint (defaults to `https://lite-api.jup.ag/price/v3`) |
 
 ---
 
@@ -84,7 +86,7 @@ meteora-copybot/
    - Meteora DLMM (`LBUZKhR…`)  
 
 2. **Execution**  
-   Uses Jupiter API v6 to request a swap route with the same in/out mints.  
+   Uses the latest Jupiter Swap API (`/swap/v1/quote` + `/swap`) to mirror the same in/out mints.  
    Builds a signed transaction with your wallet and submits it.  
 
 3. **Pool Scanner**  
