@@ -985,6 +985,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Initialize admin panel
+  initAdminPanel();
+
   // Check if Phantom is installed
   const provider = getPhantomProvider();
   if (!provider) {
@@ -1327,6 +1330,9 @@ let liquidityChart = null;
 let tradingVolumeChart = null;
 
 async function openPoolModal(poolAddress) {
+  // Сохраняем адрес пула для формы открытия позиции
+  currentPoolAddress = poolAddress;
+  
   const modal = document.getElementById('poolModal');
   const loadingEl = document.getElementById('poolModalLoading');
   const contentEl = document.getElementById('poolModalContent');
@@ -1478,6 +1484,135 @@ function closePoolModal() {
     tradingVolumeChart = null;
   }
 }
+
+// ========== OPEN POSITION FUNCTIONALITY ==========
+let currentPoolAddress = null;
+
+function showPositionStatus(message, type) {
+  const el = document.getElementById('positionStatus');
+  if (!el) return;
+  el.style.display = 'block';
+  el.className = `rpc-status ${type}`;
+  el.querySelector('.status-message').textContent = message;
+}
+
+// currentPoolAddress сохраняется в функции openPoolModal
+
+// Обработчик формы открытия позиции
+document.addEventListener('DOMContentLoaded', () => {
+  const openPositionForm = document.getElementById('openPositionForm');
+  if (openPositionForm) {
+    openPositionForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      if (!walletPublicKey) {
+        showPositionStatus('Подключите Phantom кошелек', 'error');
+        return;
+      }
+      
+      if (!currentPoolAddress) {
+        showPositionStatus('Ошибка: адрес пула не найден', 'error');
+        return;
+      }
+      
+      const strategy = document.getElementById('positionStrategy').value;
+      const rangeInterval = parseInt(document.getElementById('positionRangeInterval').value);
+      const tokenXAmount = document.getElementById('positionTokenXAmount').value;
+      const tokenYAmount = document.getElementById('positionTokenYAmount').value;
+      
+      // Валидация входных данных
+      if (!strategy || !['balance', 'imbalance', 'oneSide'].includes(strategy)) {
+        showPositionStatus('Выберите корректную стратегию', 'error');
+        return;
+      }
+      
+      if (!rangeInterval || rangeInterval < 1 || rangeInterval > 100) {
+        showPositionStatus('Диапазон должен быть от 1 до 100', 'error');
+        return;
+      }
+      
+      if (!tokenXAmount || parseFloat(tokenXAmount) <= 0) {
+        showPositionStatus('Количество Token X должно быть больше 0', 'error');
+        return;
+      }
+      
+      // Для oneSide стратегии tokenYAmount может быть 0
+      if (tokenYAmount === undefined || tokenYAmount === '') {
+        showPositionStatus('Введите количество Token Y (может быть 0 для односторонней позиции)', 'error');
+        return;
+      }
+      
+      if (strategy !== 'oneSide' && parseFloat(tokenYAmount) <= 0) {
+        showPositionStatus('Количество Token Y должно быть больше 0 для выбранной стратегии', 'error');
+        return;
+      }
+      
+      try {
+        showPositionStatus('Генерация транзакции...', 'info');
+        
+        // 1) Запрашиваем у сервера транзакцию открытия позиции
+        const res = await fetch('/api/meteora/open-position-tx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            poolAddress: currentPoolAddress,
+            userPublicKey: walletPublicKey,
+            strategy,
+            rangeInterval,
+            tokenXAmount,
+            tokenYAmount,
+          }),
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Create position tx failed');
+        }
+        
+        const { transaction: txBase64, positionPublicKey, positionSecretKey } = data;
+        
+        // 2) Десериализуем транзакцию
+        const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
+        const tx = solanaWeb3.VersionedTransaction.deserialize(txBytes);
+        
+        // 3) Подписываем position keypair
+        const positionKeypair = solanaWeb3.Keypair.fromSecretKey(Uint8Array.from(positionSecretKey));
+        tx.sign([positionKeypair]);
+        
+        // 4) Подписываем пользовательским кошельком через Phantom
+        const provider = getPhantomProvider();
+        if (!provider) {
+          throw new Error('Phantom не найден');
+        }
+        
+        showPositionStatus('Подписание транзакции...', 'info');
+        const signed = await provider.signTransaction(tx);
+        
+        // 5) Отправляем через наш сервер
+        const signedBase64 = btoa(String.fromCharCode(...signed.serialize()));
+        const sendRes = await fetch('/api/tx/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ signedTxBase64: signedBase64 }),
+        });
+        
+        const sendData = await sendRes.json();
+        if (!sendRes.ok) {
+          throw new Error(sendData.error || 'Send failed');
+        }
+        
+        const sig = sendData.signature;
+        showPositionStatus(`Позиция открыта! Signature: ${sig} | Position: ${positionPublicKey}`, 'success');
+        
+        // Очищаем форму
+        openPositionForm.reset();
+      } catch (err) {
+        console.error('Open position error:', err);
+        showPositionStatus('Ошибка открытия позиции: ' + (err.message || 'Unknown'), 'error');
+      }
+    });
+  }
+});
 
 function createLiquidityChart(bins, tokenXName, tokenYName, currentPrice) {
   const ctx = document.getElementById('liquidityChart');
@@ -2078,6 +2213,134 @@ function createTradingVolumeChart(poolData) {
       }
     }
   });
+}
+
+// ========== ADMIN PANEL ==========
+let adminConfig = null;
+let positionsRefreshInterval = null;
+
+// Загрузка конфигурации админа
+async function loadAdminConfig() {
+  try {
+    const response = await fetch('/api/admin/config');
+    if (!response.ok) throw new Error('Failed to load admin config');
+    const config = await response.json();
+    adminConfig = config;
+    
+    // Заполняем форму
+    document.getElementById('priceCorridorUpper').value = config.priceCorridorPercent?.upper || 4;
+    document.getElementById('priceCorridorLower').value = config.priceCorridorPercent?.lower || 4;
+    document.getElementById('stopLossPercent').value = config.stopLossPercent || -2;
+    document.getElementById('feeCheckPercent').value = config.feeCheckPercent || 50;
+    document.getElementById('takeProfitPercent').value = config.takeProfitPercent || 2;
+    document.getElementById('checkIntervalMs').value = config.monitoring?.checkIntervalMs || 30000;
+    document.getElementById('priceUpdateIntervalMs').value = config.monitoring?.priceUpdateIntervalMs || 10000;
+    document.getElementById('mirrorSwapEnabled').checked = config.mirrorSwap?.enabled || false;
+    document.getElementById('hedgeAmountPercent').value = config.mirrorSwap?.hedgeAmountPercent || 50;
+    document.getElementById('slippageBps').value = config.mirrorSwap?.slippageBps || 100;
+    document.getElementById('averagePriceCloseEnabled').checked = config.averagePriceClose?.enabled || false;
+    document.getElementById('averagePriceDeviation').value = config.averagePriceClose?.percentDeviation || 2;
+  } catch (error) {
+    console.error('Error loading admin config:', error);
+  }
+}
+
+// Сохранение конфигурации админа
+async function saveAdminConfig() {
+  const config = {
+    priceCorridorPercent: {
+      upper: parseFloat(document.getElementById('priceCorridorUpper').value),
+      lower: parseFloat(document.getElementById('priceCorridorLower').value),
+    },
+    stopLossPercent: parseFloat(document.getElementById('stopLossPercent').value),
+    feeCheckPercent: parseFloat(document.getElementById('feeCheckPercent').value),
+    takeProfitPercent: parseFloat(document.getElementById('takeProfitPercent').value),
+    monitoring: {
+      checkIntervalMs: parseInt(document.getElementById('checkIntervalMs').value),
+      priceUpdateIntervalMs: parseInt(document.getElementById('priceUpdateIntervalMs').value),
+    },
+    mirrorSwap: {
+      enabled: document.getElementById('mirrorSwapEnabled').checked,
+      hedgeAmountPercent: parseFloat(document.getElementById('hedgeAmountPercent').value),
+      slippageBps: parseInt(document.getElementById('slippageBps').value),
+    },
+    averagePriceClose: {
+      enabled: document.getElementById('averagePriceCloseEnabled').checked,
+      percentDeviation: parseFloat(document.getElementById('averagePriceDeviation').value),
+    },
+  };
+
+  try {
+    const response = await fetch('/api/admin/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) throw new Error('Failed to save admin config');
+    alert('✅ Конфигурация сохранена!');
+    adminConfig = config;
+  } catch (error) {
+    console.error('Error saving admin config:', error);
+    alert('❌ Ошибка сохранения конфигурации');
+  }
+}
+
+// Загрузка позиций
+async function loadPositions() {
+  try {
+    // TODO: Добавить API endpoint для получения позиций
+    // const response = await fetch('/api/positions');
+    // const positions = await response.json();
+    
+    const positionsList = document.getElementById('positionsList');
+    positionsList.innerHTML = '<p>Загрузка позиций...</p>';
+    
+    // Пока заглушка
+    positionsList.innerHTML = '<p>Позиции будут отображаться здесь</p>';
+  } catch (error) {
+    console.error('Error loading positions:', error);
+  }
+}
+
+// Обновление статистики
+async function updateAdminStats() {
+  try {
+    // TODO: Добавить API endpoint для статистики
+    // const response = await fetch('/api/admin/stats');
+    // const stats = await response.json();
+    
+    // Пока заглушка
+    document.getElementById('activePositionsCount').textContent = '0';
+    document.getElementById('closedPositionsCount').textContent = '0';
+    document.getElementById('totalFees').textContent = '$0.00';
+  } catch (error) {
+    console.error('Error updating admin stats:', error);
+  }
+}
+
+// Инициализация админ панели
+function initAdminPanel() {
+  // Загружаем конфигурацию
+  loadAdminConfig();
+  
+  // Обработчик формы
+  document.getElementById('adminConfigForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveAdminConfig();
+  });
+  
+  // Загружаем позиции и статистику
+  loadPositions();
+  updateAdminStats();
+  
+  // Обновляем каждые 10 секунд
+  if (positionsRefreshInterval) {
+    clearInterval(positionsRefreshInterval);
+  }
+  positionsRefreshInterval = setInterval(() => {
+    loadPositions();
+    updateAdminStats();
+  }, 10000);
 }
 
 // ========== WALLET SETTINGS API ==========

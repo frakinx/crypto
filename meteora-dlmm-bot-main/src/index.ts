@@ -6,6 +6,7 @@ import { getQuote, createSwapTransaction } from './dex/jupiter.js';
 import { signAndSend } from './execution/trader.js';
 import { openDb, insertTrade } from './storage/db.js';
 import { PublicKey } from '@solana/web3.js';
+import { PositionMonitor } from './position-monitoring/monitor.js';
 
 const ONE_SOL = 1_000_000_000n;
 
@@ -16,6 +17,12 @@ async function main() {
   console.log('Bot pubkey:', kp.publicKey.toBase58());
 
   const db = openDb();
+
+  // Запускаем мониторинг позиций сразу при старте
+  console.log('Starting position monitoring...');
+  const positionMonitor = new PositionMonitor(conn, kp);
+  positionMonitor.start();
+  console.log('Position monitoring started');
 
   if (!CONFIG.leaders.length) {
     console.log('No leaders configured. Set LEADER_ADDRESSES in .env');

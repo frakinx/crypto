@@ -6,7 +6,9 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import fs from 'fs';
 import { getConnection } from './rpc.js';
 import { getQuote as jupGetQuote, createSwapTransaction as jupCreateSwapTx } from './dex/jupiter.js';
+import { createOpenPositionTransaction, createClosePositionTransaction } from './dex/meteora.js';
 import { CONFIG } from './config.js';
+import { loadAdminConfig, saveAdminConfig, type AdminConfig } from './position-monitoring/config.js';
 
 type TokenInfo = {
   address: string;
@@ -513,6 +515,128 @@ app.post('/api/tx/send', async (req, res) => {
     res.status(500).json({ error: (error as Error).message || 'Send failed' });
   }
 });
+
+// ================== Meteora DLMM Position API ==================
+// Генерация транзакции открытия позиции в пуле
+app.post('/api/meteora/open-position-tx', async (req, res) => {
+  try {
+    const { poolAddress, userPublicKey, strategy, rangeInterval, tokenXAmount, tokenYAmount } = req.body || {};
+    
+    // Валидация входных параметров
+    if (!poolAddress || !userPublicKey || !strategy || rangeInterval === undefined || !tokenXAmount || tokenYAmount === undefined) {
+      return res.status(400).json({ error: 'Все параметры обязательны: poolAddress, userPublicKey, strategy, rangeInterval, tokenXAmount, tokenYAmount' });
+    }
+    
+    if (!['balance', 'imbalance', 'oneSide'].includes(strategy)) {
+      return res.status(400).json({ error: 'Некорректная стратегия. Допустимые значения: balance, imbalance, oneSide' });
+    }
+    
+    if (rangeInterval < 1 || rangeInterval > 100) {
+      return res.status(400).json({ error: 'Диапазон должен быть от 1 до 100' });
+    }
+    
+    if (parseFloat(tokenXAmount) <= 0) {
+      return res.status(400).json({ error: 'Количество Token X должно быть больше 0' });
+    }
+    
+    // Для oneSide стратегии tokenYAmount может быть 0
+    if (strategy !== 'oneSide' && parseFloat(tokenYAmount) <= 0) {
+      return res.status(400).json({ error: 'Количество Token Y должно быть больше 0 для выбранной стратегии' });
+    }
+    
+    // Валидация адреса пула
+    try {
+      new PublicKey(String(poolAddress));
+    } catch (e) {
+      return res.status(400).json({ error: 'Некорректный адрес пула' });
+    }
+    
+    // Валидация адреса пользователя
+    try {
+      new PublicKey(String(userPublicKey));
+    } catch (e) {
+      return res.status(400).json({ error: 'Некорректный адрес пользователя' });
+    }
+
+    const connection = getConnection();
+    const userPk = new PublicKey(String(userPublicKey));
+
+    const { transaction, positionKeypair } = await createOpenPositionTransaction(connection, {
+      poolAddress: String(poolAddress),
+      userPublicKey: userPk,
+      strategy: strategy as 'balance' | 'imbalance' | 'oneSide',
+      rangeInterval: Number(rangeInterval),
+      tokenXAmount: String(tokenXAmount),
+      tokenYAmount: String(tokenYAmount),
+    });
+
+    // Сериализуем транзакцию в base64
+    const serialized = Buffer.from(transaction.serialize()).toString('base64');
+    
+    // Возвращаем транзакцию и публичный ключ позиции (для подписи position keypair)
+    res.json({
+      transaction: serialized,
+      positionPublicKey: positionKeypair.publicKey.toBase58(),
+      positionSecretKey: Array.from(positionKeypair.secretKey), // для подписи на сервере или клиенте
+    });
+  } catch (error) {
+    console.error('Error creating open position tx:', error);
+    res.status(500).json({ error: (error as Error).message || 'Create open position tx failed' });
+  }
+});
+// ====================================================
+
+// ================== Position Monitoring API ==================
+// Получить конфигурацию админа
+app.get('/api/admin/config', (req, res) => {
+  try {
+    const config = loadAdminConfig();
+    res.json(config);
+  } catch (error) {
+    console.error('Error loading admin config:', error);
+    res.status(500).json({ error: 'Failed to load admin config' });
+  }
+});
+
+// Сохранить конфигурацию админа
+app.post('/api/admin/config', (req, res) => {
+  try {
+    const config = req.body as AdminConfig;
+    saveAdminConfig(config);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving admin config:', error);
+    res.status(500).json({ error: 'Failed to save admin config' });
+  }
+});
+
+// Закрыть позицию
+app.post('/api/meteora/close-position', async (req, res) => {
+  try {
+    const { poolAddress, positionAddress, userPublicKey } = req.body || {};
+    
+    if (!poolAddress || !positionAddress || !userPublicKey) {
+      return res.status(400).json({ error: 'poolAddress, positionAddress и userPublicKey обязательны' });
+    }
+
+    const connection = getConnection();
+    const userPk = new PublicKey(String(userPublicKey));
+
+    const transaction = await createClosePositionTransaction(
+      connection,
+      String(poolAddress),
+      String(positionAddress),
+      userPk,
+    );
+
+    const serialized = Buffer.from(transaction.serialize()).toString('base64');
+    res.json({ transaction: serialized });
+  } catch (error) {
+    console.error('Error creating close position tx:', error);
+    res.status(500).json({ error: (error as Error).message || 'Create close position tx failed' });
+  }
+});
+// ====================================================
 
 app.listen(PORT, () => {
   console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
