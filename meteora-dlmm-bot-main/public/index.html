@@ -31,6 +31,8 @@
         <option value="liquidity-asc">Ликвидность (возрастание)</option>
         <option value="volume-desc">Объем 24ч (убывание)</option>
         <option value="volume-asc">Объем 24ч (возрастание)</option>
+        <option value="fees-desc">Комиссии 24ч (убывание)</option>
+        <option value="fees-asc">Комиссии 24ч (возрастание)</option>
         <option value="apr-desc">APR (убывание)</option>
         <option value="apr-asc">APR (возрастание)</option>
       </select>
@@ -324,6 +326,21 @@
           </div>
         </div>
 
+        <!-- Fees 24h Range -->
+        <div class="filter-section">
+          <h3>Fees 24h by range</h3>
+          <div class="filter-range">
+            <div class="filter-range-input">
+              <label>Min ($)</label>
+              <input type="number" id="filterFees24hMin" placeholder="0" step="0.01" />
+            </div>
+            <div class="filter-range-input">
+              <label>Max ($)</label>
+              <input type="number" id="filterFees24hMax" placeholder="∞" step="0.01" />
+            </div>
+          </div>
+        </div>
+
         <!-- Fee/TVL % by Period -->
         <div class="filter-section">
           <h3>Fee/TVL % by period</h3>
@@ -466,6 +483,26 @@
     </div>
   </div>
 
+  <!-- Pair Pools Modal -->
+  <div id="pairPoolsModal" class="pool-modal">
+    <div class="pool-modal-content">
+      <div class="pool-modal-header">
+        <h2 id="pairPoolsModalTitle">Пулы для пары</h2>
+        <button class="pool-modal-close" id="closePairPoolsModalBtn">&times;</button>
+      </div>
+      <div class="pool-modal-body">
+        <div id="pairPoolsModalLoading" class="pool-modal-loading">Загрузка данных...</div>
+        <div id="pairPoolsModalContent" style="display: none;">
+          <div style="margin-bottom: 20px; color: white; font-size: 1.1em; font-weight: 600;">
+            <span id="pairPoolsCount">Найдено пулов: 0</span>
+          </div>
+          <div id="pairPoolsContainer" class="pools-container"></div>
+        </div>
+        <div id="pairPoolsModalError" class="pool-modal-error" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Pool Detail Modal -->
   <div id="poolModal" class="pool-modal">
     <div class="pool-modal-content">
@@ -479,6 +516,7 @@
           <div class="pool-detail-info">
             <div class="pool-detail-name" id="poolDetailName"></div>
             <div class="pool-detail-address" id="poolDetailAddress"></div>
+            <div class="pool-detail-meta" id="poolDetailMeta" style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;"></div>
           </div>
           
           <div class="liquidity-distribution-section">
@@ -511,10 +549,86 @@
             </div>
           </div>
 
+          <div class="fees-section">
+            <div class="section-header">
+              <h3>Fees History</h3>
+              <div class="section-value" id="feesValue">$0</div>
+            </div>
+            <div class="chart-container">
+              <canvas id="feesChart"></canvas>
+            </div>
+          </div>
+
+          <div class="tvl-section">
+            <div class="section-header">
+              <h3>TVL (Total Value Locked) History</h3>
+              <div class="section-value" id="tvlValue">$0</div>
+            </div>
+            <div class="chart-container">
+              <canvas id="tvlChart"></canvas>
+            </div>
+          </div>
+
+          <div class="fee-tvl-section">
+            <div class="section-header">
+              <h3>Fee/TVL Ratio History</h3>
+              <div class="section-value" id="feeTvlValue">0%</div>
+            </div>
+            <div class="chart-container">
+              <canvas id="feeTvlChart"></canvas>
+            </div>
+          </div>
+
+          <div class="volume-comparison-section">
+            <div class="section-header">
+              <h3>Volume Comparison (Different Periods)</h3>
+            </div>
+            <div class="chart-container">
+              <canvas id="volumeComparisonChart"></canvas>
+            </div>
+          </div>
+
+          <div class="reserves-section">
+            <div class="section-header">
+              <h3>Token Reserves Distribution</h3>
+            </div>
+            <div class="chart-container">
+              <canvas id="reservesChart"></canvas>
+            </div>
+          </div>
+
           <div class="pool-detail-stats">
             <div class="pool-detail-stat">
               <div class="pool-detail-stat-label">Bin Step</div>
               <div class="pool-detail-stat-value" id="poolDetailBinStep"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Active Bin</div>
+              <div class="pool-detail-stat-value" id="poolDetailActiveBin"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Current Price</div>
+              <div class="pool-detail-stat-value" id="poolDetailPrice"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">TVL</div>
+              <div class="pool-detail-stat-value" id="poolDetailTVL"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Volume 24h</div>
+              <div class="pool-detail-stat-value" id="poolDetailVolume24h"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Volume 7d</div>
+              <div class="pool-detail-stat-value" id="poolDetailVolume7d"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Fees 24h</div>
+              <div class="pool-detail-stat-value" id="poolDetailFees24h"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Fees 7d</div>
+              <div class="pool-detail-stat-value" id="poolDetailFees7d"></div>
             </div>
             <div class="pool-detail-stat">
               <div class="pool-detail-stat-label">Base Fee</div>
@@ -533,8 +647,55 @@
               <div class="pool-detail-stat-value" id="poolDetailDynamicFee"></div>
             </div>
             <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">24h Fee</div>
-              <div class="pool-detail-stat-value" id="poolDetail24hFee"></div>
+              <div class="pool-detail-stat-label">Fee/TVL 24h</div>
+              <div class="pool-detail-stat-value" id="poolDetailFeeTvl"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">APR</div>
+              <div class="pool-detail-stat-value" id="poolDetailAPR"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">APY</div>
+              <div class="pool-detail-stat-value" id="poolDetailAPY"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Reserve X</div>
+              <div class="pool-detail-stat-value" id="poolDetailReserveX"></div>
+            </div>
+            <div class="pool-detail-stat">
+              <div class="pool-detail-stat-label">Reserve Y</div>
+              <div class="pool-detail-stat-value" id="poolDetailReserveY"></div>
+            </div>
+          </div>
+
+          <!-- Дополнительные метрики -->
+          <div class="additional-metrics-section">
+            <h3 style="color: white; margin-bottom: 20px;">Дополнительные метрики</h3>
+            <div class="pool-detail-stats">
+              <div class="pool-detail-stat">
+                <div class="pool-detail-stat-label">Avg Trade Size 24h</div>
+                <div class="pool-detail-stat-value" id="poolDetailAvgTradeSize"></div>
+              </div>
+              <div class="pool-detail-stat">
+                <div class="pool-detail-stat-label">Volume/TVL Ratio</div>
+                <div class="pool-detail-stat-value" id="poolDetailVolumeTvlRatio"></div>
+              </div>
+              <div class="pool-detail-stat">
+                <div class="pool-detail-stat-label">Fees/Volume Ratio</div>
+                <div class="pool-detail-stat-value" id="poolDetailFeesVolumeRatio"></div>
+              </div>
+              <div class="pool-detail-stat">
+                <div class="pool-detail-stat-label">Reserve X Value</div>
+                <div class="pool-detail-stat-value" id="poolDetailReserveXValue"></div>
+              </div>
+              <div class="pool-detail-stat">
+                <div class="pool-detail-stat-label">Reserve Y Value</div>
+                <div class="pool-detail-stat-value" id="poolDetailReserveYValue"></div>
+              </div>
+              <div class="pool-detail-stat">
+                <div class="pool-detail-stat-label">Total Reserves Value</div>
+                <div class="pool-detail-stat-value" id="poolDetailTotalReservesValue"></div>
+              </div>
             </div>
           </div>
 

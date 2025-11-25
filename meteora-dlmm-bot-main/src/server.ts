@@ -237,6 +237,40 @@ app.get('/api/pools', async (req, res) => {
   }
 });
 
+// API endpoint для получения пулов по паре токенов
+app.get('/api/pools/by-pair', async (req, res) => {
+  try {
+    const { tokenXMint, tokenYMint } = req.query;
+    
+    if (!tokenXMint || !tokenYMint) {
+      return res.status(400).json({ error: 'tokenXMint и tokenYMint обязательны' });
+    }
+
+    // Получаем все пулы
+    const response = await fetch('https://dlmm-api.meteora.ag/pair/all');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const allPools = await response.json();
+    
+    // Фильтруем пулы по паре токенов (учитываем обе возможные комбинации)
+    const filteredPools = allPools.filter((pool: any) => {
+      const poolTokenXMint = pool.tokenXMint || pool.token_x?.mint || pool.base_mint || '';
+      const poolTokenYMint = pool.tokenYMint || pool.token_y?.mint || pool.quote_mint || '';
+      
+      // Проверяем обе комбинации (X/Y и Y/X)
+      const match1 = poolTokenXMint === tokenXMint && poolTokenYMint === tokenYMint;
+      const match2 = poolTokenXMint === tokenYMint && poolTokenYMint === tokenXMint;
+      return match1 || match2;
+    });
+    
+    res.json(filteredPools);
+  } catch (error) {
+    console.error('Error fetching pools by pair:', error);
+    res.status(500).json({ error: 'Failed to fetch pools by pair' });
+  }
+});
+
 // API endpoint для получения детальной информации о пуле
 app.get('/api/pool/:address', async (req, res) => {
   try {

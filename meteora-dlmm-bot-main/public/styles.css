@@ -1212,7 +1212,12 @@ header h1 {
   border-radius: 4px;
 }
 
-.trading-volume-section {
+.trading-volume-section,
+.fees-section,
+.tvl-section,
+.fee-tvl-section,
+.volume-comparison-section,
+.reserves-section {
   margin-bottom: 30px;
   background: #0f0f1e;
   padding: 20px;
@@ -1220,7 +1225,8 @@ header h1 {
   border: 1px solid #2d2d44;
 }
 
-.trading-volume-header {
+.trading-volume-header,
+.section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1233,13 +1239,15 @@ header h1 {
   margin: 0;
 }
 
-.trading-volume-value {
+.trading-volume-value,
+.section-value {
   color: white;
   font-size: 1.8em;
   font-weight: bold;
 }
 
-.trading-volume-chart-container {
+.trading-volume-chart-container,
+.chart-container {
   position: relative;
   height: 250px;
 }
@@ -1248,6 +1256,14 @@ header h1 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 16px;
+}
+
+.additional-metrics-section {
+  margin-top: 30px;
+  background: rgba(102, 126, 234, 0.05);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
 }
 
 .pool-detail-stat {
@@ -1594,6 +1610,85 @@ header h1 {
   .edit-pool-config-btn {
     width: 100%;
   }
+}
+
+/* Pair Pools Modal Styles */
+.pair-pool-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 15px;
+  transition: all 0.3s ease;
+}
+
+.pair-pool-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(102, 126, 234, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
+}
+
+.pair-pool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pair-pool-name {
+  font-size: 1.2em;
+  font-weight: bold;
+  color: white;
+}
+
+.pair-pool-address {
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: monospace;
+  word-break: break-all;
+  margin-bottom: 15px;
+}
+
+.pair-pool-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.pair-pool-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pair-pool-info-label {
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.pair-pool-info-value {
+  font-size: 1em;
+  font-weight: 600;
+  color: white;
+}
+
+.pair-pool-section-title {
+  font-size: 0.9em;
+  font-weight: 600;
+  color: rgba(102, 126, 234, 0.9);
+  margin-top: 16px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pair-pool-section-title:first-child {
+  margin-top: 0;
 }
 
 /* Animation for admin panel appearance */

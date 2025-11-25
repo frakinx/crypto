@@ -18,6 +18,8 @@ let filters = {
   volumePeriodMin: null,
   feesPeriod: 'hour_24',
   feesPeriodMin: null,
+  fees24hMin: null,
+  fees24hMax: null,
   feeTvlPeriod: 'hour_24',
   feeTvlPeriodMin: null,
   aprMin: null,
@@ -290,6 +292,17 @@ function applyFilters() {
       }
     }
     
+    // Fees 24h range - фильтрация по комиссиям за 24 часа
+    if (filters.fees24hMin !== null || filters.fees24hMax !== null) {
+      const fees24h = parseFloat(pool.fees_24h || pool.fees?.hour_24 || 0);
+      if (filters.fees24hMin !== null && fees24h < filters.fees24hMin) {
+        return false;
+      }
+      if (filters.fees24hMax !== null && fees24h > filters.fees24hMax) {
+        return false;
+      }
+    }
+    
     // Fee/TVL % by period - применяем только если указан минимум > 0
     if (filters.feeTvlPeriodMin !== null && filters.feeTvlPeriodMin > 0) {
       const feeTvl = parseFloat(pool.fee_tvl_ratio?.[filters.feeTvlPeriod] || 0) * 100; // конвертируем в проценты
@@ -529,6 +542,10 @@ function applyFilters() {
         aVal = parseFloat(a.trade_volume_24h || 0);
         bVal = parseFloat(b.trade_volume_24h || 0);
         break;
+      case 'fees':
+        aVal = parseFloat(a.fees_24h || a.fees?.hour_24 || 0);
+        bVal = parseFloat(b.fees_24h || b.fees?.hour_24 || 0);
+        break;
       case 'apr':
         aVal = parseFloat(a.apr || 0);
         bVal = parseFloat(b.apr || 0);
@@ -562,6 +579,8 @@ function renderPools() {
       filters.liquidityMax !== null ||
       filters.volumePeriodMin !== null ||
       filters.feesPeriodMin !== null ||
+      filters.fees24hMin !== null ||
+      filters.fees24hMax !== null ||
       filters.feeTvlPeriodMin !== null ||
       filters.aprMin !== null ||
       filters.aprMax !== null ||
@@ -612,11 +631,21 @@ function renderPools() {
   
   containerEl.innerHTML = poolsToDisplay.map(pool => {
     const liquidity = parseFloat(pool.liquidity || 0);
-    const volume24h = parseFloat(pool.trade_volume_24h || 0);
-    const fees24h = parseFloat(pool.fees_24h || 0);
+    const volume24h = parseFloat(pool.trade_volume_24h || pool.volume?.hour_24 || 0);
+    const fees24h = parseFloat(pool.fees_24h || pool.fees?.hour_24 || 0);
     const apr = parseFloat(pool.apr || 0);
     const apy = parseFloat(pool.apy || 0);
-    const baseFee = parseFloat(pool.base_fee_percentage || 0);
+    const baseFee = parseFloat(pool.base_fee_percentage || pool.baseFee || pool.base_fee_bps || 0);
+    const price = parseFloat(pool.price || pool.current_price || pool.price_usd || 0);
+    const binStep = pool.bin_step || pool.binStep || '-';
+    
+    // Получаем mint адреса токенов
+    const tokenXMint = pool.tokenXMint || pool.token_x?.mint || pool.base_mint || '';
+    const tokenYMint = pool.tokenYMint || pool.token_y?.mint || pool.quote_mint || '';
+    
+    // Получаем названия токенов
+    const tokenXName = pool.tokenX?.symbol || pool.token_x?.symbol || pool.tokenX?.name || pool.token_x?.name || 'Token X';
+    const tokenYName = pool.tokenY?.symbol || pool.token_y?.symbol || pool.tokenY?.name || pool.token_y?.name || 'Token Y';
     
     return `
       <div class="pool-card" data-pool-address="${pool.address}" style="cursor: pointer;">
@@ -624,6 +653,12 @@ function renderPools() {
           <div class="pool-name">${pool.name || 'Unknown'}</div>
           ${pool.is_verified ? '<span class="pool-verified">✓ Verified</span>' : ''}
         </div>
+        ${tokenXMint && tokenYMint ? `
+          <div class="pool-pair" data-token-x-mint="${tokenXMint}" data-token-y-mint="${tokenYMint}" style="margin-bottom: 10px; padding: 8px; background: rgba(102, 126, 234, 0.1); border-radius: 6px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(102, 126, 234, 0.2)'" onmouseout="this.style.background='rgba(102, 126, 234, 0.1)'">
+            <span style="font-weight: 600; color: #667eea;">🔗 ${tokenXName} / ${tokenYName}</span>
+            <span style="font-size: 0.85em; color: #666; margin-left: 8px;">(все пулы этой пары)</span>
+          </div>
+        ` : ''}
         <div class="pool-address">${pool.address}</div>
         <div class="pool-info">
           <div class="pool-info-item">
@@ -642,6 +677,18 @@ function renderPools() {
             <span class="pool-info-label">Базовая комиссия</span>
             <span class="pool-info-value">${formatPercent(baseFee)}</span>
           </div>
+          ${binStep !== '-' ? `
+            <div class="pool-info-item">
+              <span class="pool-info-label">Bin Step</span>
+              <span class="pool-info-value">${binStep}</span>
+            </div>
+          ` : ''}
+          ${price > 0 ? `
+            <div class="pool-info-item">
+              <span class="pool-info-label">Цена</span>
+              <span class="pool-info-value">$${price.toFixed(4)}</span>
+            </div>
+          ` : ''}
         </div>
         ${apr > 0 || apy > 0 ? `
           <div class="pool-apr ${apr === 0 ? 'zero' : ''}">
@@ -654,7 +701,19 @@ function renderPools() {
 
   // Добавляем обработчики клика на карточки пулов
   containerEl.querySelectorAll('.pool-card').forEach(card => {
-    card.addEventListener('click', () => {
+    card.addEventListener('click', (e) => {
+      // Если клик был на элемент пары токенов, не открываем модальное окно пула
+      if (e.target.closest('.pool-pair')) {
+        e.stopPropagation();
+        const pairEl = e.target.closest('.pool-pair');
+        const tokenXMint = pairEl.getAttribute('data-token-x-mint');
+        const tokenYMint = pairEl.getAttribute('data-token-y-mint');
+        if (tokenXMint && tokenYMint) {
+          openPairPoolsModal(tokenXMint, tokenYMint);
+        }
+        return;
+      }
+      
       const address = card.getAttribute('data-pool-address');
       if (address) {
         openPoolModal(address);
@@ -728,6 +787,8 @@ function openFilterModal() {
   document.getElementById('filterVolumePeriodMin').value = filters.volumePeriodMin || '';
   document.getElementById('filterFeesPeriod').value = filters.feesPeriod;
   document.getElementById('filterFeesPeriodMin').value = filters.feesPeriodMin || '';
+  document.getElementById('filterFees24hMin').value = filters.fees24hMin || '';
+  document.getElementById('filterFees24hMax').value = filters.fees24hMax || '';
   document.getElementById('filterFeeTvlPeriod').value = filters.feeTvlPeriod;
   document.getElementById('filterFeeTvlPeriodMin').value = filters.feeTvlPeriodMin || '';
   document.getElementById('filterAprMin').value = filters.aprMin || '';
@@ -753,6 +814,8 @@ function resetFilters() {
     volumePeriodMin: null,
     feesPeriod: 'hour_24',
     feesPeriodMin: null,
+    fees24hMin: null,
+    fees24hMax: null,
     feeTvlPeriod: 'hour_24',
     feeTvlPeriodMin: null,
     aprMin: null,
@@ -771,6 +834,8 @@ function resetFilters() {
   document.getElementById('filterVolumePeriodMin').value = '';
   document.getElementById('filterFeesPeriod').value = 'hour_24';
   document.getElementById('filterFeesPeriodMin').value = '';
+  document.getElementById('filterFees24hMin').value = '';
+  document.getElementById('filterFees24hMax').value = '';
   document.getElementById('filterFeeTvlPeriod').value = 'hour_24';
   document.getElementById('filterFeeTvlPeriodMin').value = '';
   document.getElementById('filterAprMin').value = '';
@@ -806,6 +871,12 @@ function saveFilters() {
   const feesPeriodMin = document.getElementById('filterFeesPeriodMin').value.trim();
   filters.feesPeriodMin = feesPeriodMin && feesPeriodMin !== '' ? parseFloat(feesPeriodMin) : null;
   
+  const fees24hMin = document.getElementById('filterFees24hMin').value.trim();
+  filters.fees24hMin = fees24hMin && fees24hMin !== '' ? parseFloat(fees24hMin) : null;
+  
+  const fees24hMax = document.getElementById('filterFees24hMax').value.trim();
+  filters.fees24hMax = fees24hMax && fees24hMax !== '' ? parseFloat(fees24hMax) : null;
+  
   filters.feeTvlPeriod = document.getElementById('filterFeeTvlPeriod').value;
   const feeTvlPeriodMin = document.getElementById('filterFeeTvlPeriodMin').value.trim();
   filters.feeTvlPeriodMin = feeTvlPeriodMin && feeTvlPeriodMin !== '' ? parseFloat(feeTvlPeriodMin) : null;
@@ -831,6 +902,7 @@ function saveFilters() {
   console.log(`   - LFG: ${filters.lfg}`);
   console.log(`   - Liquidity: ${filters.liquidityMin || 'мин нет'} - ${filters.liquidityMax || 'макс нет'}`);
   console.log(`   - Volume (${filters.volumePeriod}): мин ${filters.volumePeriodMin || 'нет'}`);
+  console.log(`   - Fees 24h: ${filters.fees24hMin || 'мин нет'} - ${filters.fees24hMax || 'макс нет'}`);
   console.log(`   - APR: ${filters.aprMin || 'мин нет'} - ${filters.aprMax || 'макс нет'}`);
   console.log('💾 ========================================');
   
@@ -981,6 +1053,20 @@ document.addEventListener('DOMContentLoaded', () => {
     poolModal.addEventListener('click', (e) => {
       if (e.target.id === 'poolModal') {
         closePoolModal();
+      }
+    });
+  }
+  
+  // Обработчики для модального окна пары пулов
+  const closePairPoolsModalBtn = document.getElementById('closePairPoolsModalBtn');
+  const pairPoolsModal = document.getElementById('pairPoolsModal');
+  if (closePairPoolsModalBtn) {
+    closePairPoolsModalBtn.addEventListener('click', closePairPoolsModal);
+  }
+  if (pairPoolsModal) {
+    pairPoolsModal.addEventListener('click', (e) => {
+      if (e.target.id === 'pairPoolsModal') {
+        closePairPoolsModal();
       }
     });
   }
@@ -1328,6 +1414,11 @@ function showProxyStatus(message, type) {
 // ========== POOL MODAL FUNCTIONALITY ==========
 let liquidityChart = null;
 let tradingVolumeChart = null;
+let feesChart = null;
+let tvlChart = null;
+let feeTvlChart = null;
+let volumeComparisonChart = null;
+let reservesChart = null;
 
 async function openPoolModal(poolAddress) {
   // Сохраняем адрес пула для формы открытия позиции
@@ -1376,13 +1467,98 @@ async function openPoolModal(poolAddress) {
     document.getElementById('poolDetailName').textContent = poolData.name || 'Unknown Pool';
     document.getElementById('poolDetailAddress').textContent = poolData.address || poolAddress;
     
+    // Заполняем мета-информацию (теги, launchpad, дата создания)
+    const metaEl = document.getElementById('poolDetailMeta');
+    metaEl.innerHTML = '';
+    
+    if (poolData.is_verified) {
+      metaEl.innerHTML += '<span class="pool-verified">✓ Verified</span>';
+    }
+    
+    if (poolData.tags && Array.isArray(poolData.tags) && poolData.tags.length > 0) {
+      poolData.tags.forEach(tag => {
+        if (tag.toLowerCase() === 'lfg') {
+          metaEl.innerHTML += '<span style="background: #ff6b6b; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold;">LFG</span>';
+        } else {
+          metaEl.innerHTML += `<span style="background: rgba(102, 126, 234, 0.3); color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85em;">${tag}</span>`;
+        }
+      });
+    }
+    
+    if (poolData.launchpad) {
+      metaEl.innerHTML += `<span style="background: #667eea; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold;">🚀 ${poolData.launchpad}</span>`;
+    }
+    
+    if (poolData.created_at) {
+      const createdAt = new Date(poolData.created_at).toLocaleDateString('ru-RU', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      metaEl.innerHTML += `<span style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">📅 ${createdAt}</span>`;
+    }
+    
     // Заполняем статистику
     document.getElementById('poolDetailBinStep').textContent = poolData.bin_step || poolData.binStep || '-';
-    document.getElementById('poolDetailBaseFee').textContent = formatPercent(parseFloat(poolData.base_fee_percentage || poolData.baseFee || 0));
-    document.getElementById('poolDetailMaxFee').textContent = formatPercent(parseFloat(poolData.max_fee_percentage || poolData.maxFee || 10));
-    document.getElementById('poolDetailProtocolFee').textContent = formatPercent(parseFloat(poolData.protocol_fee_percentage || poolData.protocolFee || 0));
+    document.getElementById('poolDetailActiveBin').textContent = poolData.active_bin || poolData.activeBin || '-';
+    
+    const price = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 0);
+    document.getElementById('poolDetailPrice').textContent = price > 0 ? '$' + price.toFixed(6) : '-';
+    
+    const liquidity = parseFloat(poolData.liquidity || poolData.tvl || 0);
+    document.getElementById('poolDetailTVL').textContent = formatCurrency(liquidity);
+    
+    const volume24h = parseFloat(poolData.trade_volume_24h || poolData.volume?.hour_24 || 0);
+    document.getElementById('poolDetailVolume24h').textContent = formatCurrency(volume24h);
+    
+    const volume7d = parseFloat(poolData.volume?.hour_168 || poolData.volume_7d || 0);
+    document.getElementById('poolDetailVolume7d').textContent = volume7d > 0 ? formatCurrency(volume7d) : '-';
+    
+    const fees24h = parseFloat(poolData.fees_24h || poolData.fees?.hour_24 || 0);
+    document.getElementById('poolDetailFees24h').textContent = formatCurrency(fees24h);
+    
+    const fees7d = parseFloat(poolData.fees?.hour_168 || poolData.fees_7d || 0);
+    document.getElementById('poolDetailFees7d').textContent = fees7d > 0 ? formatCurrency(fees7d) : '-';
+    
+    document.getElementById('poolDetailBaseFee').textContent = formatPercent(parseFloat(poolData.base_fee_percentage || poolData.baseFee || poolData.base_fee_bps || 0));
+    document.getElementById('poolDetailMaxFee').textContent = formatPercent(parseFloat(poolData.max_fee_percentage || poolData.maxFee || poolData.max_fee_bps || 10));
+    document.getElementById('poolDetailProtocolFee').textContent = formatPercent(parseFloat(poolData.protocol_fee_percentage || poolData.protocolFee || poolData.protocol_fee_bps || 0));
     document.getElementById('poolDetailDynamicFee').textContent = formatPercent(parseFloat(poolData.dynamic_fee_percentage || poolData.dynamicFee || 0));
-    document.getElementById('poolDetail24hFee').textContent = formatCurrency(parseFloat(poolData.fees_24h || poolData.fees24h || 0));
+    
+    const feeTvlRatio = parseFloat(poolData.fee_tvl_ratio?.hour_24 || poolData.fee_tvl_ratio || 0) * 100;
+    document.getElementById('poolDetailFeeTvl').textContent = feeTvlRatio > 0 ? formatPercent(feeTvlRatio) : '-';
+    
+    const apr = parseFloat(poolData.apr || 0);
+    document.getElementById('poolDetailAPR').textContent = apr > 0 ? formatPercent(apr) : '-';
+    
+    const apy = parseFloat(poolData.apy || 0);
+    document.getElementById('poolDetailAPY').textContent = apy > 0 ? formatPercent(apy) : '-';
+    
+    const reserveX = parseFloat(poolData.reserveX || poolData.reserve_x || poolData.tokenX?.reserve || poolData.token_x?.reserve || 0);
+    document.getElementById('poolDetailReserveX').textContent = reserveX > 0 ? formatNumber(reserveX) : '-';
+    
+    const reserveY = parseFloat(poolData.reserveY || poolData.reserve_y || poolData.tokenY?.reserve || poolData.token_y?.reserve || 0);
+    document.getElementById('poolDetailReserveY').textContent = reserveY > 0 ? formatNumber(reserveY) : '-';
+    
+    // Дополнительные метрики
+    const transactionCount = parseFloat(poolData.transaction_count || poolData.tx_count || poolData.trades_count || 0);
+    const avgTradeSize = transactionCount > 0 && volume24h > 0 ? volume24h / transactionCount : 0;
+    document.getElementById('poolDetailAvgTradeSize').textContent = avgTradeSize > 0 ? formatCurrency(avgTradeSize) : '-';
+    
+    const volumeTvlRatio = liquidity > 0 ? (volume24h / liquidity) * 100 : 0;
+    document.getElementById('poolDetailVolumeTvlRatio').textContent = volumeTvlRatio > 0 ? formatPercent(volumeTvlRatio) : '-';
+    
+    const feesVolumeRatio = volume24h > 0 ? (fees24h / volume24h) * 100 : 0;
+    document.getElementById('poolDetailFeesVolumeRatio').textContent = feesVolumeRatio > 0 ? formatPercent(feesVolumeRatio) : '-';
+    
+    const reserveXValue = reserveX > 0 && price > 0 ? reserveX * price : 0;
+    document.getElementById('poolDetailReserveXValue').textContent = reserveXValue > 0 ? formatCurrency(reserveXValue) : '-';
+    
+    const reserveYValue = reserveY > 0 ? reserveY : 0; // Предполагаем, что Y - это stablecoin или quote token
+    document.getElementById('poolDetailReserveYValue').textContent = reserveYValue > 0 ? formatCurrency(reserveYValue) : '-';
+    
+    const totalReservesValue = reserveXValue + reserveYValue;
+    document.getElementById('poolDetailTotalReservesValue').textContent = totalReservesValue > 0 ? formatCurrency(totalReservesValue) : '-';
     
     // Получаем названия токенов - пробуем разные варианты
     let tokenXName = poolData.tokenX?.symbol || poolData.token_x?.symbol || 
@@ -1489,6 +1665,21 @@ async function openPoolModal(poolAddress) {
     // Создаем график торгового объема
     createTradingVolumeChart(poolData);
     
+    // Создаем график комиссий
+    createFeesChart(poolData);
+    
+    // Создаем график TVL
+    createTVLChart(poolData);
+    
+    // Создаем график Fee/TVL
+    createFeeTvlChart(poolData);
+    
+    // Создаем сравнительный график объемов
+    createVolumeComparisonChart(poolData);
+    
+    // Создаем график распределения резервов
+    createReservesChart(poolData, tokenXName, tokenYName);
+    
     loadingEl.style.display = 'none';
     contentEl.style.display = 'block';
   } catch (error) {
@@ -1517,6 +1708,255 @@ function closePoolModal() {
     tradingVolumeChart.destroy();
     tradingVolumeChart = null;
   }
+  if (feesChart) {
+    feesChart.destroy();
+    feesChart = null;
+  }
+  if (tvlChart) {
+    tvlChart.destroy();
+    tvlChart = null;
+  }
+  if (feeTvlChart) {
+    feeTvlChart.destroy();
+    feeTvlChart = null;
+  }
+  if (volumeComparisonChart) {
+    volumeComparisonChart.destroy();
+    volumeComparisonChart = null;
+  }
+  if (reservesChart) {
+    reservesChart.destroy();
+    reservesChart = null;
+  }
+}
+
+// Открытие модального окна со списком пулов для пары токенов
+async function openPairPoolsModal(tokenXMint, tokenYMint) {
+  const modal = document.getElementById('pairPoolsModal');
+  const loadingEl = document.getElementById('pairPoolsModalLoading');
+  const contentEl = document.getElementById('pairPoolsModalContent');
+  const errorEl = document.getElementById('pairPoolsModalError');
+  const containerEl = document.getElementById('pairPoolsContainer');
+  
+  modal.classList.add('show');
+  loadingEl.style.display = 'block';
+  contentEl.style.display = 'none';
+  errorEl.style.display = 'none';
+  containerEl.innerHTML = '';
+  
+  try {
+    // Загружаем пулы для пары токенов
+    const response = await fetch(`/api/pools/by-pair?tokenXMint=${encodeURIComponent(tokenXMint)}&tokenYMint=${encodeURIComponent(tokenYMint)}`);
+    if (!response.ok) {
+      throw new Error('Ошибка загрузки пулов для пары');
+    }
+    
+    const pools = await response.json();
+    
+    // Получаем названия токенов из первого пула или используем mint адреса
+    let tokenXName = 'Token X';
+    let tokenYName = 'Token Y';
+    
+    if (pools.length > 0) {
+      const firstPool = pools[0];
+      tokenXName = firstPool.tokenX?.symbol || firstPool.token_x?.symbol || 
+                   firstPool.tokenX?.name || firstPool.token_x?.name || 
+                   tokenXMint.substring(0, 8) + '...';
+      tokenYName = firstPool.tokenY?.symbol || firstPool.token_y?.symbol || 
+                   firstPool.tokenY?.name || firstPool.token_y?.name || 
+                   tokenYMint.substring(0, 8) + '...';
+    }
+    
+    // Обновляем заголовок
+    document.getElementById('pairPoolsModalTitle').textContent = `Пулы для пары: ${tokenXName} / ${tokenYName}`;
+    document.getElementById('pairPoolsCount').textContent = `Найдено пулов: ${pools.length}`;
+    
+    // Отображаем пулы
+    if (pools.length === 0) {
+      containerEl.innerHTML = '<div style="text-align: center; padding: 40px; color: rgba(255, 255, 255, 0.7);">Пулы для этой пары не найдены</div>';
+    } else {
+      containerEl.innerHTML = pools.map(pool => {
+        const liquidity = parseFloat(pool.liquidity || 0);
+        const volume24h = parseFloat(pool.trade_volume_24h || pool.volume?.hour_24 || 0);
+        const fees24h = parseFloat(pool.fees_24h || pool.fees?.hour_24 || 0);
+        const apr = parseFloat(pool.apr || 0);
+        const apy = parseFloat(pool.apy || 0);
+        const binStep = pool.bin_step || pool.binStep || '-';
+        const baseFee = parseFloat(pool.base_fee_percentage || pool.baseFee || pool.base_fee_bps || 0);
+        const maxFee = parseFloat(pool.max_fee_percentage || pool.maxFee || pool.max_fee_bps || 0);
+        const protocolFee = parseFloat(pool.protocol_fee_percentage || pool.protocolFee || pool.protocol_fee_bps || 0);
+        const dynamicFee = parseFloat(pool.dynamic_fee_percentage || pool.dynamicFee || 0);
+        const price = parseFloat(pool.price || pool.current_price || pool.price_usd || 0);
+        const feeTvlRatio = parseFloat(pool.fee_tvl_ratio?.hour_24 || pool.fee_tvl_ratio || 0) * 100;
+        const volume7d = parseFloat(pool.volume?.hour_168 || pool.volume_7d || 0);
+        const fees7d = parseFloat(pool.fees?.hour_168 || pool.fees_7d || 0);
+        
+        // Получаем резервы токенов
+        const reserveX = parseFloat(pool.reserveX || pool.reserve_x || pool.tokenX?.reserve || pool.token_x?.reserve || 0);
+        const reserveY = parseFloat(pool.reserveY || pool.reserve_y || pool.tokenY?.reserve || pool.token_y?.reserve || 0);
+        
+        // Дополнительная информация
+        const activeBin = pool.active_bin || pool.activeBin || '-';
+        const createdAt = pool.created_at ? new Date(pool.created_at).toLocaleDateString('ru-RU') : '-';
+        
+        return `
+          <div class="pair-pool-card" data-pool-address="${pool.address}" style="cursor: pointer;">
+            <div class="pair-pool-header">
+              <div class="pair-pool-name">${pool.name || 'Unknown Pool'}</div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                ${pool.is_verified ? '<span class="pool-verified">✓ Verified</span>' : ''}
+                ${pool.tags?.includes('lfg') ? '<span style="background: #ff6b6b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; font-weight: bold;">LFG</span>' : ''}
+                ${pool.launchpad ? `<span style="background: #667eea; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; font-weight: bold;">${pool.launchpad}</span>` : ''}
+              </div>
+            </div>
+            <div class="pair-pool-address">${pool.address}</div>
+            
+            <!-- Основные метрики -->
+            <div class="pair-pool-section-title">Основные метрики</div>
+            <div class="pair-pool-info">
+              <div class="pair-pool-info-item">
+                <span class="pair-pool-info-label">Bin Step</span>
+                <span class="pair-pool-info-value">${binStep}</span>
+              </div>
+              <div class="pair-pool-info-item">
+                <span class="pair-pool-info-label">Активный Bin</span>
+                <span class="pair-pool-info-value">${activeBin}</span>
+              </div>
+              <div class="pair-pool-info-item">
+                <span class="pair-pool-info-label">Ликвидность (TVL)</span>
+                <span class="pair-pool-info-value">${formatCurrency(liquidity)}</span>
+              </div>
+              ${price > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">Текущая цена</span>
+                  <span class="pair-pool-info-value">$${price.toFixed(6)}</span>
+                </div>
+              ` : ''}
+            </div>
+            
+            <!-- Объем и комиссии -->
+            <div class="pair-pool-section-title">Объем и комиссии</div>
+            <div class="pair-pool-info">
+              <div class="pair-pool-info-item">
+                <span class="pair-pool-info-label">Объем 24ч</span>
+                <span class="pair-pool-info-value">${formatCurrency(volume24h)}</span>
+              </div>
+              ${volume7d > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">Объем 7д</span>
+                  <span class="pair-pool-info-value">${formatCurrency(volume7d)}</span>
+                </div>
+              ` : ''}
+              <div class="pair-pool-info-item">
+                <span class="pair-pool-info-label">Комиссии 24ч</span>
+                <span class="pair-pool-info-value">${formatCurrency(fees24h)}</span>
+              </div>
+              ${fees7d > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">Комиссии 7д</span>
+                  <span class="pair-pool-info-value">${formatCurrency(fees7d)}</span>
+                </div>
+              ` : ''}
+              ${feeTvlRatio > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">Fee/TVL 24ч</span>
+                  <span class="pair-pool-info-value">${formatPercent(feeTvlRatio)}</span>
+                </div>
+              ` : ''}
+            </div>
+            
+            <!-- Комиссии и доходность -->
+            <div class="pair-pool-section-title">Комиссии и доходность</div>
+            <div class="pair-pool-info">
+              <div class="pair-pool-info-item">
+                <span class="pair-pool-info-label">Базовая комиссия</span>
+                <span class="pair-pool-info-value">${formatPercent(baseFee)}</span>
+              </div>
+              ${maxFee > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">Макс. комиссия</span>
+                  <span class="pair-pool-info-value">${formatPercent(maxFee)}</span>
+                </div>
+              ` : ''}
+              ${protocolFee > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">Протокол комиссия</span>
+                  <span class="pair-pool-info-value">${formatPercent(protocolFee)}</span>
+                </div>
+              ` : ''}
+              ${dynamicFee > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">Динамическая комиссия</span>
+                  <span class="pair-pool-info-value">${formatPercent(dynamicFee)}</span>
+                </div>
+              ` : ''}
+              ${apr > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">APR</span>
+                  <span class="pair-pool-info-value" style="color: #4CAF50; font-weight: bold;">${formatPercent(apr)}</span>
+                </div>
+              ` : ''}
+              ${apy > 0 ? `
+                <div class="pair-pool-info-item">
+                  <span class="pair-pool-info-label">APY</span>
+                  <span class="pair-pool-info-value" style="color: #4CAF50; font-weight: bold;">${formatPercent(apy)}</span>
+                </div>
+              ` : ''}
+            </div>
+            
+            <!-- Резервы токенов -->
+            ${(reserveX > 0 || reserveY > 0) ? `
+              <div class="pair-pool-section-title">Резервы токенов</div>
+              <div class="pair-pool-info">
+                ${reserveX > 0 ? `
+                  <div class="pair-pool-info-item">
+                    <span class="pair-pool-info-label">Резерв Token X</span>
+                    <span class="pair-pool-info-value">${formatNumber(reserveX)}</span>
+                  </div>
+                ` : ''}
+                ${reserveY > 0 ? `
+                  <div class="pair-pool-info-item">
+                    <span class="pair-pool-info-label">Резерв Token Y</span>
+                    <span class="pair-pool-info-value">${formatNumber(reserveY)}</span>
+                  </div>
+                ` : ''}
+              </div>
+            ` : ''}
+            
+            ${createdAt !== '-' ? `
+              <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">
+                Создан: ${createdAt}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+      
+      // Добавляем обработчики клика на карточки пулов
+      containerEl.querySelectorAll('.pair-pool-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const address = card.getAttribute('data-pool-address');
+          if (address) {
+            closePairPoolsModal();
+            openPoolModal(address);
+          }
+        });
+      });
+    }
+    
+    loadingEl.style.display = 'none';
+    contentEl.style.display = 'block';
+  } catch (error) {
+    console.error('Error loading pair pools:', error);
+    loadingEl.style.display = 'none';
+    errorEl.textContent = 'Ошибка загрузки пулов: ' + error.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+function closePairPoolsModal() {
+  const modal = document.getElementById('pairPoolsModal');
+  modal.classList.remove('show');
 }
 
 // ========== OPEN POSITION FUNCTIONALITY ==========
@@ -2390,6 +2830,341 @@ function createTradingVolumeChart(poolData) {
             color: 'rgba(255, 255, 255, 0.7)',
             callback: function(value) {
               return formatCurrency(value);
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// Создание графика комиссий
+function createFeesChart(poolData) {
+  const ctx = document.getElementById('feesChart');
+  if (!ctx) return;
+  
+  if (feesChart) {
+    feesChart.destroy();
+  }
+  
+  const fees24h = parseFloat(poolData.fees_24h || poolData.fees?.hour_24 || 0);
+  document.getElementById('feesValue').textContent = formatCurrency(fees24h);
+  
+  const labels = [];
+  const feesData = [];
+  
+  // Извлекаем данные о комиссиях из разных источников
+  if (poolData.fees && typeof poolData.fees === 'object' && !Array.isArray(poolData.fees)) {
+    const periodOrder = { 'min_30': 1, 'hour_1': 2, 'hour_2': 3, 'hour_4': 4, 'hour_12': 5, 'hour_24': 6, 'day_7': 7 };
+    const periods = Object.keys(poolData.fees)
+      .filter(key => periodOrder[key])
+      .sort((a, b) => (periodOrder[a] || 999) - (periodOrder[b] || 999));
+    
+    periods.forEach(key => {
+      const formatPeriod = (k) => k.replace('min_', '').replace('hour_', '').replace('day_', '');
+      labels.push(formatPeriod(key) + (key.includes('min') ? 'm' : key.includes('hour') ? 'h' : 'd'));
+      feesData.push(parseFloat(poolData.fees[key] || 0));
+    });
+  }
+  
+  if (labels.length === 0) {
+    document.querySelector('.fees-section')?.style.setProperty('display', 'none');
+    return;
+  }
+  
+  feesChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Fees',
+        data: feesData,
+        borderColor: '#4CAF50',
+        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          callbacks: {
+            label: (context) => formatCurrency(context.parsed.y)
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: 'rgba(255, 255, 255, 0.7)' } },
+        y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: 'rgba(255, 255, 255, 0.7)', callback: (v) => formatCurrency(v) } }
+      }
+    }
+  });
+}
+
+// Создание графика TVL
+function createTVLChart(poolData) {
+  const ctx = document.getElementById('tvlChart');
+  if (!ctx) return;
+  
+  if (tvlChart) {
+    tvlChart.destroy();
+  }
+  
+  const currentTVL = parseFloat(poolData.liquidity || poolData.tvl || 0);
+  document.getElementById('tvlValue').textContent = formatCurrency(currentTVL);
+  
+  // Если нет исторических данных TVL, создаем простой график с текущим значением
+  const labels = ['Current'];
+  const tvlData = [currentTVL];
+  
+  // Можно добавить исторические данные, если они доступны
+  if (poolData.tvl_history && Array.isArray(poolData.tvl_history) && poolData.tvl_history.length > 0) {
+    labels.length = 0;
+    tvlData.length = 0;
+    poolData.tvl_history.forEach(item => {
+      const date = new Date(item.date || item.timestamp * 1000);
+      if (!isNaN(date.getTime())) {
+        labels.push(date.toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' }));
+        tvlData.push(parseFloat(item.tvl || item.value || 0));
+      }
+    });
+  }
+  
+  if (labels.length === 0) {
+    document.querySelector('.tvl-section')?.style.setProperty('display', 'none');
+    return;
+  }
+  
+  tvlChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'TVL',
+        data: tvlData,
+        borderColor: '#667eea',
+        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          callbacks: {
+            label: (context) => formatCurrency(context.parsed.y)
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: 'rgba(255, 255, 255, 0.7)' } },
+        y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: 'rgba(255, 255, 255, 0.7)', callback: (v) => formatCurrency(v) } }
+      }
+    }
+  });
+}
+
+// Создание графика Fee/TVL
+function createFeeTvlChart(poolData) {
+  const ctx = document.getElementById('feeTvlChart');
+  if (!ctx) return;
+  
+  if (feeTvlChart) {
+    feeTvlChart.destroy();
+  }
+  
+  const feeTvlRatio = parseFloat(poolData.fee_tvl_ratio?.hour_24 || poolData.fee_tvl_ratio || 0) * 100;
+  document.getElementById('feeTvlValue').textContent = formatPercent(feeTvlRatio);
+  
+  const labels = [];
+  const ratioData = [];
+  
+  // Извлекаем данные о Fee/TVL из разных периодов
+  if (poolData.fee_tvl_ratio && typeof poolData.fee_tvl_ratio === 'object' && !Array.isArray(poolData.fee_tvl_ratio)) {
+    const periodOrder = { 'min_30': 1, 'hour_1': 2, 'hour_2': 3, 'hour_4': 4, 'hour_12': 5, 'hour_24': 6 };
+    const periods = Object.keys(poolData.fee_tvl_ratio)
+      .filter(key => periodOrder[key])
+      .sort((a, b) => (periodOrder[a] || 999) - (periodOrder[b] || 999));
+    
+    periods.forEach(key => {
+      const formatPeriod = (k) => k.replace('min_', '').replace('hour_', '');
+      labels.push(formatPeriod(key) + (key.includes('min') ? 'm' : 'h'));
+      ratioData.push(parseFloat(poolData.fee_tvl_ratio[key] || 0) * 100);
+    });
+  }
+  
+  if (labels.length === 0) {
+    document.querySelector('.fee-tvl-section')?.style.setProperty('display', 'none');
+    return;
+  }
+  
+  feeTvlChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Fee/TVL %',
+        data: ratioData,
+        borderColor: '#FF9800',
+        backgroundColor: 'rgba(255, 152, 0, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          callbacks: {
+            label: (context) => formatPercent(context.parsed.y)
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: 'rgba(255, 255, 255, 0.7)' } },
+        y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: 'rgba(255, 255, 255, 0.7)', callback: (v) => formatPercent(v) } }
+      }
+    }
+  });
+}
+
+// Создание сравнительного графика объемов
+function createVolumeComparisonChart(poolData) {
+  const ctx = document.getElementById('volumeComparisonChart');
+  if (!ctx) return;
+  
+  if (volumeComparisonChart) {
+    volumeComparisonChart.destroy();
+  }
+  
+  const labels = [];
+  const volumes = [];
+  
+  // Извлекаем объемы за разные периоды
+  if (poolData.volume && typeof poolData.volume === 'object' && !Array.isArray(poolData.volume)) {
+    const periods = [
+      { key: 'min_30', label: '30m' },
+      { key: 'hour_1', label: '1h' },
+      { key: 'hour_2', label: '2h' },
+      { key: 'hour_4', label: '4h' },
+      { key: 'hour_12', label: '12h' },
+      { key: 'hour_24', label: '24h' },
+      { key: 'hour_168', label: '7d' }
+    ];
+    
+    periods.forEach(period => {
+      if (poolData.volume[period.key]) {
+        labels.push(period.label);
+        volumes.push(parseFloat(poolData.volume[period.key] || 0));
+      }
+    });
+  }
+  
+  if (labels.length === 0) {
+    document.querySelector('.volume-comparison-section')?.style.setProperty('display', 'none');
+    return;
+  }
+  
+  volumeComparisonChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Volume',
+        data: volumes,
+        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+        borderColor: '#667eea',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          callbacks: {
+            label: (context) => formatCurrency(context.parsed.y)
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: 'rgba(255, 255, 255, 0.7)' } },
+        y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: 'rgba(255, 255, 255, 0.7)', callback: (v) => formatCurrency(v) } }
+      }
+    }
+  });
+}
+
+// Создание графика распределения резервов
+function createReservesChart(poolData, tokenXName, tokenYName) {
+  const ctx = document.getElementById('reservesChart');
+  if (!ctx) return;
+  
+  if (reservesChart) {
+    reservesChart.destroy();
+  }
+  
+  const reserveX = parseFloat(poolData.reserveX || poolData.reserve_x || poolData.tokenX?.reserve || poolData.token_x?.reserve || 0);
+  const reserveY = parseFloat(poolData.reserveY || poolData.reserve_y || poolData.tokenY?.reserve || poolData.token_y?.reserve || 0);
+  
+  // Получаем цены для расчета стоимости в USD
+  const price = parseFloat(poolData.price || poolData.current_price || 1);
+  const valueX = reserveX * price;
+  const valueY = reserveY;
+  
+  const totalValue = valueX + valueY;
+  
+  if (totalValue === 0 || (reserveX === 0 && reserveY === 0)) {
+    document.querySelector('.reserves-section')?.style.setProperty('display', 'none');
+    return;
+  }
+  
+  reservesChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: [tokenXName, tokenYName],
+      datasets: [{
+        data: [valueX, valueY],
+        backgroundColor: ['#00D9FF', '#8B5CF6'],
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: 'rgba(255, 255, 255, 0.9)',
+            padding: 15,
+            font: { size: 12 }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          callbacks: {
+            label: (context) => {
+              const label = context.label || '';
+              const value = context.parsed || 0;
+              const percentage = ((value / totalValue) * 100).toFixed(2);
+              return `${label}: ${formatCurrency(value)} (${percentage}%)`;
             }
           }
         }
