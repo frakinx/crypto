@@ -1365,9 +1365,9 @@ header h1 {
   gap: 10px;
 }
 
-.admin-config,
 .admin-positions,
-.admin-stats {
+.admin-stats,
+.admin-pools-config {
   background: rgba(255, 255, 255, 0.03);
   border-radius: 16px;
   padding: 25px;
@@ -1376,101 +1376,13 @@ header h1 {
   transition: all 0.3s ease;
 }
 
-.admin-config:hover,
 .admin-positions:hover,
-.admin-stats:hover {
+.admin-stats:hover,
+.admin-pools-config:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(102, 126, 234, 0.3);
   transform: translateY(-2px);
   box-shadow: 0 4px 20px rgba(102, 126, 234, 0.15);
-}
-
-#adminConfigForm {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-#adminConfigForm .form-group {
-  margin-bottom: 0;
-}
-
-#adminConfigForm .form-group label {
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
-  margin-bottom: 10px;
-  display: block;
-  font-size: 0.95em;
-}
-
-#adminConfigForm .form-group input[type="number"],
-#adminConfigForm .form-group input[type="checkbox"] {
-  width: 100%;
-  padding: 12px 16px;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  background: rgba(15, 15, 30, 0.6);
-  color: white;
-  font-size: 14px;
-  transition: all 0.3s ease;
-}
-
-#adminConfigForm .form-group input[type="number"]:focus {
-  outline: none;
-  border-color: #667eea;
-  background: rgba(15, 15, 30, 0.8);
-  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
-  transform: translateY(-1px);
-}
-
-#adminConfigForm .form-group input[type="number"]:hover {
-  border-color: rgba(102, 126, 234, 0.5);
-}
-
-#adminConfigForm .form-group input[type="checkbox"] {
-  width: auto;
-  margin-right: 8px;
-  cursor: pointer;
-  accent-color: #667eea;
-  transform: scale(1.2);
-}
-
-#adminConfigForm .form-group label:has(input[type="checkbox"]) {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 12px;
-  border-radius: 8px;
-  transition: background 0.2s;
-}
-
-#adminConfigForm .form-group label:has(input[type="checkbox"]):hover {
-  background: rgba(102, 126, 234, 0.1);
-}
-
-#adminConfigForm .btn-primary {
-  grid-column: 1 / -1;
-  padding: 16px 32px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-  margin-top: 10px;
-}
-
-#adminConfigForm .btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 25px rgba(102, 126, 234, 0.4);
-  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-}
-
-#adminConfigForm .btn-primary:active {
-  transform: translateY(0);
 }
 
 .positions-list {
@@ -1546,6 +1458,108 @@ header h1 {
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
 }
 
+/* Pool Config Cards */
+.pools-config-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.pool-config-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.pool-config-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(102, 126, 234, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
+}
+
+.pool-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pool-config-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-family: monospace;
+  font-size: 0.95em;
+}
+
+.copy-pool-address-btn {
+  background: rgba(102, 126, 234, 0.2);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: all 0.2s;
+}
+
+.copy-pool-address-btn:hover {
+  background: rgba(102, 126, 234, 0.4);
+  transform: scale(1.1);
+}
+
+.edit-pool-config-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  transition: all 0.3s;
+}
+
+.edit-pool-config-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.pool-config-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.pool-config-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-label {
+  font-size: 0.8em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.detail-value {
+  font-size: 0.95em;
+  color: white;
+  font-weight: 500;
+}
+
+.pool-config-form-container {
+  padding: 10px 0;
+}
+
 /* Responsive design for admin panel */
 @media (max-width: 768px) {
   .admin-section {
@@ -1557,18 +1571,28 @@ header h1 {
     font-size: 1.5em;
   }
 
-  #adminConfigForm {
-    grid-template-columns: 1fr;
-  }
-
   .stats-grid {
     grid-template-columns: 1fr;
   }
 
-  .admin-config,
   .admin-positions,
-  .admin-stats {
+  .admin-stats,
+  .admin-pools-config {
     padding: 20px;
+  }
+
+  .pools-config-list {
+    grid-template-columns: 1fr;
+  }
+
+  .pool-config-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .edit-pool-config-btn {
+    width: 100%;
   }
 }
 
@@ -1613,30 +1637,6 @@ header h1 {
   background: rgba(102, 126, 234, 0.7);
 }
 
-/* Enhanced form group styling for admin */
-.admin-config .form-group {
-  position: relative;
-}
-
-.admin-config .form-group label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Input focus ring animation */
-.admin-config input[type="number"]:focus {
-  animation: pulseGlow 2s infinite;
-}
-
-@keyframes pulseGlow {
-  0%, 100% {
-    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(102, 126, 234, 0.15);
-  }
-}
 
 /* Success message styling */
 .admin-section .success-message {

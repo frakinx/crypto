@@ -1343,6 +1343,9 @@ async function openPoolModal(poolAddress) {
   contentEl.style.display = 'none';
   errorEl.style.display = 'none';
   
+  // Загружаем настройки пула
+  await loadPoolSettings(poolAddress);
+  
   try {
     const response = await fetch(`/api/pool/${poolAddress}`);
     if (!response.ok) {
@@ -1439,8 +1442,34 @@ async function openPoolModal(poolAddress) {
     
     const currentPrice = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 1);
     
+    // Получаем mint адреса токенов
+    const tokenXMint = poolData.tokenXMint || poolData.token_x_mint || poolData.base_mint;
+    const tokenYMint = poolData.tokenYMint || poolData.token_y_mint || poolData.quote_mint;
+    
+    // Сохраняем информацию о токенах для конвертации
+    currentPoolTokenX = {
+      mint: tokenXMint,
+      symbol: tokenXName,
+      decimals: getTokenDecimalsForPool(tokenXMint)
+    };
+    currentPoolTokenY = {
+      mint: tokenYMint,
+      symbol: tokenYName,
+      decimals: getTokenDecimalsForPool(tokenYMint)
+    };
+    
+    // Обновляем подсказки для полей ввода
+    const tokenXHint = document.getElementById('positionTokenXHint');
+    const tokenYHint = document.getElementById('positionTokenYHint');
+    if (tokenXHint) {
+      tokenXHint.textContent = `Введите количество в единицах ${tokenXName} (например, 1 для 1 ${tokenXName})`;
+    }
+    if (tokenYHint) {
+      tokenYHint.textContent = `Введите количество в единицах ${tokenYName} (например, 100 для 100 ${tokenYName})`;
+    }
+    
     // Логируем найденные названия токенов
-    console.log('Found token names:', { tokenXName, tokenYName });
+    console.log('Found token names:', { tokenXName, tokenYName, tokenXMint, tokenYMint, decimalsX: currentPoolTokenX.decimals, decimalsY: currentPoolTokenY.decimals });
     
     document.getElementById('legendTokenX').textContent = tokenXName;
     document.getElementById('legendTokenY').textContent = tokenYName;
@@ -1474,6 +1503,11 @@ function closePoolModal() {
   const modal = document.getElementById('poolModal');
   modal.classList.remove('show');
   
+  // Очищаем информацию о токенах
+  currentPoolAddress = null;
+  currentPoolTokenX = null;
+  currentPoolTokenY = null;
+  
   // Уничтожаем графики при закрытии
   if (liquidityChart) {
     liquidityChart.destroy();
@@ -1487,6 +1521,38 @@ function closePoolModal() {
 
 // ========== OPEN POSITION FUNCTIONALITY ==========
 let currentPoolAddress = null;
+let currentPoolTokenX = null; // { mint, symbol, decimals }
+let currentPoolTokenY = null; // { mint, symbol, decimals }
+
+// Конвертация из обычных единиц в минимальные единицы (с учетом decimals)
+function convertToSmallestUnits(amount, decimals) {
+  if (!decimals || decimals === 0) {
+    // Если decimals неизвестен, предполагаем стандартные значения
+    return Math.floor(Number(amount) * 1e9);
+  }
+  return Math.floor(Number(amount) * Math.pow(10, decimals));
+}
+
+// Получить decimals токена из tokenIndex или дефолтные значения
+function getTokenDecimalsForPool(mintAddress) {
+  if (!mintAddress) return 9; // По умолчанию 9 (как SOL)
+  
+  // Пробуем получить из tokenIndex
+  if (window.tokenIndexByAddress) {
+    const token = window.tokenIndexByAddress.get(String(mintAddress));
+    if (token && token.decimals !== undefined) {
+      return token.decimals;
+    }
+  }
+  
+  // Дефолтные значения для популярных токенов
+  const defaultDecimals = {
+    'So11111111111111111111111111111111111111112': 9, // SOL
+    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 6, // USDC
+    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 6, // USDT
+  };
+  return defaultDecimals[mintAddress] || 9; // По умолчанию 9
+}
 
 function showPositionStatus(message, type) {
   const el = document.getElementById('positionStatus');
@@ -1496,10 +1562,115 @@ function showPositionStatus(message, type) {
   el.querySelector('.status-message').textContent = message;
 }
 
+function showPoolSettingsStatus(message, type) {
+  const el = document.getElementById('poolSettingsStatus');
+  if (!el) return;
+  el.style.display = 'block';
+  el.className = `rpc-status ${type}`;
+  el.querySelector('.status-message').textContent = message;
+}
+
+// Загрузка настроек пула
+async function loadPoolSettings(poolAddress) {
+  if (!poolAddress) return;
+  
+  try {
+    const response = await fetch(`/api/admin/pool-config/${poolAddress}`);
+    if (!response.ok) {
+      // Если настроек нет, используем значения по умолчанию
+      return;
+    }
+    
+    const config = await response.json();
+    
+    // Заполняем форму настройками пула
+    if (config.priceCorridorPercent) {
+      document.getElementById('poolPriceCorridorUpper').value = config.priceCorridorPercent.upper || 4;
+      document.getElementById('poolPriceCorridorLower').value = config.priceCorridorPercent.lower || 4;
+    }
+    document.getElementById('poolStopLossPercent').value = config.stopLossPercent || -2;
+    document.getElementById('poolTakeProfitPercent').value = config.takeProfitPercent || 2;
+    document.getElementById('poolFeeCheckPercent').value = config.feeCheckPercent || 50;
+    
+    if (config.mirrorSwap) {
+      document.getElementById('poolMirrorSwapEnabled').checked = config.mirrorSwap.enabled || false;
+      document.getElementById('poolHedgeAmountPercent').value = config.mirrorSwap.hedgeAmountPercent || 50;
+      document.getElementById('poolSlippageBps').value = config.mirrorSwap.slippageBps || 100;
+    }
+    
+    if (config.averagePriceClose) {
+      document.getElementById('poolAveragePriceCloseEnabled').checked = config.averagePriceClose.enabled || false;
+      document.getElementById('poolAveragePriceDeviation').value = config.averagePriceClose.percentDeviation || 2;
+    }
+  } catch (error) {
+    console.error('Error loading pool settings:', error);
+  }
+}
+
+// Сохранение настроек пула
+async function savePoolSettings(poolAddress) {
+  if (!poolAddress) {
+    showPoolSettingsStatus('Ошибка: адрес пула не найден', 'error');
+    return;
+  }
+  
+  const config = {
+    priceCorridorPercent: {
+      upper: parseFloat(document.getElementById('poolPriceCorridorUpper').value),
+      lower: parseFloat(document.getElementById('poolPriceCorridorLower').value),
+    },
+    stopLossPercent: parseFloat(document.getElementById('poolStopLossPercent').value),
+    feeCheckPercent: parseFloat(document.getElementById('poolFeeCheckPercent').value),
+    takeProfitPercent: parseFloat(document.getElementById('poolTakeProfitPercent').value),
+    mirrorSwap: {
+      enabled: document.getElementById('poolMirrorSwapEnabled').checked,
+      hedgeAmountPercent: parseFloat(document.getElementById('poolHedgeAmountPercent').value),
+      slippageBps: parseInt(document.getElementById('poolSlippageBps').value),
+    },
+    averagePriceClose: {
+      enabled: document.getElementById('poolAveragePriceCloseEnabled').checked,
+      percentDeviation: parseFloat(document.getElementById('poolAveragePriceDeviation').value),
+    },
+  };
+  
+  try {
+    showPoolSettingsStatus('Сохранение настроек...', 'info');
+    
+    const response = await fetch(`/api/admin/pool-config/${poolAddress}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to save pool settings');
+    }
+    
+    showPoolSettingsStatus('✅ Настройки пула сохранены!', 'success');
+  } catch (error) {
+    console.error('Error saving pool settings:', error);
+    showPoolSettingsStatus('❌ Ошибка сохранения: ' + (error.message || 'Unknown'), 'error');
+  }
+}
+
 // currentPoolAddress сохраняется в функции openPoolModal
 
-// Обработчик формы открытия позиции
+// Обработчики для настроек пула и открытия позиции
 document.addEventListener('DOMContentLoaded', () => {
+  // Обработчик сохранения настроек пула
+  const savePoolSettingsBtn = document.getElementById('savePoolSettingsBtn');
+  if (savePoolSettingsBtn) {
+    savePoolSettingsBtn.addEventListener('click', async () => {
+      if (currentPoolAddress) {
+        await savePoolSettings(currentPoolAddress);
+      } else {
+        showPoolSettingsStatus('Ошибка: адрес пула не найден', 'error');
+      }
+    });
+  }
+  
+  // Обработчик формы открытия позиции
   const openPositionForm = document.getElementById('openPositionForm');
   if (openPositionForm) {
     openPositionForm.addEventListener('submit', async (e) => {
@@ -1517,8 +1688,8 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const strategy = document.getElementById('positionStrategy').value;
       const rangeInterval = parseInt(document.getElementById('positionRangeInterval').value);
-      const tokenXAmount = document.getElementById('positionTokenXAmount').value;
-      const tokenYAmount = document.getElementById('positionTokenYAmount').value;
+      const tokenXAmountInput = document.getElementById('positionTokenXAmount').value;
+      const tokenYAmountInput = document.getElementById('positionTokenYAmount').value;
       
       // Валидация входных данных
       if (!strategy || !['balance', 'imbalance', 'oneSide'].includes(strategy)) {
@@ -1531,24 +1702,36 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      if (!tokenXAmount || parseFloat(tokenXAmount) <= 0) {
+      if (!tokenXAmountInput || parseFloat(tokenXAmountInput) <= 0) {
         showPositionStatus('Количество Token X должно быть больше 0', 'error');
         return;
       }
       
       // Для oneSide стратегии tokenYAmount может быть 0
-      if (tokenYAmount === undefined || tokenYAmount === '') {
+      if (tokenYAmountInput === undefined || tokenYAmountInput === '') {
         showPositionStatus('Введите количество Token Y (может быть 0 для односторонней позиции)', 'error');
         return;
       }
       
-      if (strategy !== 'oneSide' && parseFloat(tokenYAmount) <= 0) {
+      if (strategy !== 'oneSide' && parseFloat(tokenYAmountInput) <= 0) {
         showPositionStatus('Количество Token Y должно быть больше 0 для выбранной стратегии', 'error');
         return;
       }
       
+      // Конвертируем из обычных единиц в минимальные единицы
+      if (!currentPoolTokenX || !currentPoolTokenY) {
+        showPositionStatus('Ошибка: информация о токенах пула не загружена', 'error');
+        return;
+      }
+      
+      const tokenXAmount = convertToSmallestUnits(tokenXAmountInput, currentPoolTokenX.decimals).toString();
+      const tokenYAmount = convertToSmallestUnits(tokenYAmountInput || '0', currentPoolTokenY.decimals).toString();
+      
       try {
         showPositionStatus('Генерация транзакции...', 'info');
+        
+        // Автоматически сохраняем настройки пула перед открытием позиции
+        await savePoolSettings(currentPoolAddress);
         
         // 1) Запрашиваем у сервера транзакцию открытия позиции
         const res = await fetch('/api/meteora/open-position-tx', {
@@ -2216,73 +2399,191 @@ function createTradingVolumeChart(poolData) {
 }
 
 // ========== ADMIN PANEL ==========
-let adminConfig = null;
 let positionsRefreshInterval = null;
 
-// Загрузка конфигурации админа
-async function loadAdminConfig() {
+// Загрузка настроек пулов
+async function loadPoolsConfigs() {
   try {
-    const response = await fetch('/api/admin/config');
-    if (!response.ok) throw new Error('Failed to load admin config');
-    const config = await response.json();
-    adminConfig = config;
+    const response = await fetch('/api/admin/pool-configs');
+    if (!response.ok) {
+      throw new Error('Failed to load pool configs');
+    }
     
-    // Заполняем форму
-    document.getElementById('priceCorridorUpper').value = config.priceCorridorPercent?.upper || 4;
-    document.getElementById('priceCorridorLower').value = config.priceCorridorPercent?.lower || 4;
-    document.getElementById('stopLossPercent').value = config.stopLossPercent || -2;
-    document.getElementById('feeCheckPercent').value = config.feeCheckPercent || 50;
-    document.getElementById('takeProfitPercent').value = config.takeProfitPercent || 2;
-    document.getElementById('checkIntervalMs').value = config.monitoring?.checkIntervalMs || 30000;
-    document.getElementById('priceUpdateIntervalMs').value = config.monitoring?.priceUpdateIntervalMs || 10000;
-    document.getElementById('mirrorSwapEnabled').checked = config.mirrorSwap?.enabled || false;
-    document.getElementById('hedgeAmountPercent').value = config.mirrorSwap?.hedgeAmountPercent || 50;
-    document.getElementById('slippageBps').value = config.mirrorSwap?.slippageBps || 100;
-    document.getElementById('averagePriceCloseEnabled').checked = config.averagePriceClose?.enabled || false;
-    document.getElementById('averagePriceDeviation').value = config.averagePriceClose?.percentDeviation || 2;
+    const configs = await response.json();
+    const poolsConfigList = document.getElementById('poolsConfigList');
+    
+    if (!poolsConfigList) return;
+    
+    const poolAddresses = Object.keys(configs);
+    
+    if (poolAddresses.length === 0) {
+      poolsConfigList.innerHTML = '<p style="text-align: center; color: rgba(255, 255, 255, 0.6); padding: 20px;">Нет сохраненных настроек пулов. Настройки будут созданы при открытии позиции в пуле.</p>';
+      return;
+    }
+    
+    poolsConfigList.innerHTML = poolAddresses.map(poolAddress => {
+      const config = configs[poolAddress];
+      const shortAddress = poolAddress.substring(0, 8) + '...' + poolAddress.substring(poolAddress.length - 8);
+      
+      return `
+        <div class="pool-config-card" data-pool-address="${poolAddress}">
+          <div class="pool-config-header">
+            <div class="pool-config-address">
+              <strong>${shortAddress}</strong>
+              <button class="copy-pool-address-btn" data-address="${poolAddress}" title="Копировать адрес">📋</button>
+            </div>
+            <button class="edit-pool-config-btn" data-pool-address="${poolAddress}">✏️ Редактировать</button>
+          </div>
+          <div class="pool-config-details">
+            <div class="pool-config-detail-item">
+              <span class="detail-label">Коридор:</span>
+              <span class="detail-value">+${config.priceCorridorPercent.upper}% / -${config.priceCorridorPercent.lower}%</span>
+            </div>
+            <div class="pool-config-detail-item">
+              <span class="detail-label">Stop Loss:</span>
+              <span class="detail-value">${config.stopLossPercent}%</span>
+            </div>
+            <div class="pool-config-detail-item">
+              <span class="detail-label">Take Profit:</span>
+              <span class="detail-value">${config.takeProfitPercent}%</span>
+            </div>
+            <div class="pool-config-detail-item">
+              <span class="detail-label">Mirror Swap:</span>
+              <span class="detail-value">${config.mirrorSwap.enabled ? '✅' : '❌'}</span>
+            </div>
+            <div class="pool-config-detail-item">
+              <span class="detail-label">Закрытие по средней:</span>
+              <span class="detail-value">${config.averagePriceClose.enabled ? '✅' : '❌'}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    // Добавляем обработчики для кнопок редактирования
+    poolsConfigList.querySelectorAll('.edit-pool-config-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const poolAddress = btn.getAttribute('data-pool-address');
+        openPoolConfigModal(poolAddress, configs[poolAddress]);
+      });
+    });
+    
+    // Добавляем обработчики для кнопок копирования
+    poolsConfigList.querySelectorAll('.copy-pool-address-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const address = btn.getAttribute('data-address');
+        navigator.clipboard.writeText(address).then(() => {
+          btn.textContent = '✓';
+          setTimeout(() => {
+            btn.textContent = '📋';
+          }, 2000);
+        });
+      });
+    });
   } catch (error) {
-    console.error('Error loading admin config:', error);
+    console.error('Error loading pool configs:', error);
+    const poolsConfigList = document.getElementById('poolsConfigList');
+    if (poolsConfigList) {
+      poolsConfigList.innerHTML = '<p style="color: #f44336;">Ошибка загрузки настроек пулов</p>';
+    }
   }
 }
 
-// Сохранение конфигурации админа
-async function saveAdminConfig() {
+// Открытие модального окна редактирования настроек пула
+function openPoolConfigModal(poolAddress, config) {
+  const modal = document.getElementById('poolConfigModal');
+  if (!modal) return;
+  
+  // Заполняем форму
+  document.getElementById('editPoolAddress').value = poolAddress;
+  document.getElementById('editPriceCorridorUpper').value = config.priceCorridorPercent.upper || 4;
+  document.getElementById('editPriceCorridorLower').value = config.priceCorridorPercent.lower || 4;
+  document.getElementById('editStopLossPercent').value = config.stopLossPercent || -2;
+  document.getElementById('editTakeProfitPercent').value = config.takeProfitPercent || 2;
+  document.getElementById('editFeeCheckPercent').value = config.feeCheckPercent || 50;
+  document.getElementById('editMirrorSwapEnabled').checked = config.mirrorSwap?.enabled || false;
+  document.getElementById('editHedgeAmountPercent').value = config.mirrorSwap?.hedgeAmountPercent || 50;
+  document.getElementById('editSlippageBps').value = config.mirrorSwap?.slippageBps || 100;
+  document.getElementById('editAveragePriceCloseEnabled').checked = config.averagePriceClose?.enabled || false;
+  document.getElementById('editAveragePriceDeviation').value = config.averagePriceClose?.percentDeviation || 2;
+  
+  // Скрываем статус
+  const statusEl = document.getElementById('poolConfigModalStatus');
+  if (statusEl) {
+    statusEl.style.display = 'none';
+  }
+  
+  modal.classList.add('show');
+}
+
+// Закрытие модального окна редактирования настроек пула
+function closePoolConfigModal() {
+  const modal = document.getElementById('poolConfigModal');
+  if (modal) {
+    modal.classList.remove('show');
+  }
+}
+
+// Сохранение настроек пула из модального окна
+async function savePoolConfigFromModal() {
+  const poolAddress = document.getElementById('editPoolAddress').value;
+  if (!poolAddress) {
+    showPoolConfigModalStatus('Ошибка: адрес пула не найден', 'error');
+    return;
+  }
+  
   const config = {
     priceCorridorPercent: {
-      upper: parseFloat(document.getElementById('priceCorridorUpper').value),
-      lower: parseFloat(document.getElementById('priceCorridorLower').value),
+      upper: parseFloat(document.getElementById('editPriceCorridorUpper').value),
+      lower: parseFloat(document.getElementById('editPriceCorridorLower').value),
     },
-    stopLossPercent: parseFloat(document.getElementById('stopLossPercent').value),
-    feeCheckPercent: parseFloat(document.getElementById('feeCheckPercent').value),
-    takeProfitPercent: parseFloat(document.getElementById('takeProfitPercent').value),
-    monitoring: {
-      checkIntervalMs: parseInt(document.getElementById('checkIntervalMs').value),
-      priceUpdateIntervalMs: parseInt(document.getElementById('priceUpdateIntervalMs').value),
-    },
+    stopLossPercent: parseFloat(document.getElementById('editStopLossPercent').value),
+    feeCheckPercent: parseFloat(document.getElementById('editFeeCheckPercent').value),
+    takeProfitPercent: parseFloat(document.getElementById('editTakeProfitPercent').value),
     mirrorSwap: {
-      enabled: document.getElementById('mirrorSwapEnabled').checked,
-      hedgeAmountPercent: parseFloat(document.getElementById('hedgeAmountPercent').value),
-      slippageBps: parseInt(document.getElementById('slippageBps').value),
+      enabled: document.getElementById('editMirrorSwapEnabled').checked,
+      hedgeAmountPercent: parseFloat(document.getElementById('editHedgeAmountPercent').value),
+      slippageBps: parseInt(document.getElementById('editSlippageBps').value),
     },
     averagePriceClose: {
-      enabled: document.getElementById('averagePriceCloseEnabled').checked,
-      percentDeviation: parseFloat(document.getElementById('averagePriceDeviation').value),
+      enabled: document.getElementById('editAveragePriceCloseEnabled').checked,
+      percentDeviation: parseFloat(document.getElementById('editAveragePriceDeviation').value),
     },
   };
-
+  
   try {
-    const response = await fetch('/api/admin/config', {
+    showPoolConfigModalStatus('Сохранение настроек...', 'info');
+    
+    const response = await fetch(`/api/admin/pool-config/${poolAddress}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
-    if (!response.ok) throw new Error('Failed to save admin config');
-    alert('✅ Конфигурация сохранена!');
-    adminConfig = config;
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to save pool config');
+    }
+    
+    showPoolConfigModalStatus('✅ Настройки пула сохранены!', 'success');
+    
+    // Перезагружаем список пулов
+    setTimeout(() => {
+      loadPoolsConfigs();
+      closePoolConfigModal();
+    }, 1500);
   } catch (error) {
-    console.error('Error saving admin config:', error);
-    alert('❌ Ошибка сохранения конфигурации');
+    console.error('Error saving pool config:', error);
+    showPoolConfigModalStatus('❌ Ошибка сохранения: ' + (error.message || 'Unknown'), 'error');
   }
+}
+
+function showPoolConfigModalStatus(message, type) {
+  const el = document.getElementById('poolConfigModalStatus');
+  if (!el) return;
+  el.style.display = 'block';
+  el.className = `rpc-status ${type}`;
+  el.querySelector('.status-message').textContent = message;
 }
 
 // Загрузка позиций
@@ -2320,14 +2621,28 @@ async function updateAdminStats() {
 
 // Инициализация админ панели
 function initAdminPanel() {
-  // Загружаем конфигурацию
-  loadAdminConfig();
+  // Загружаем настройки пулов
+  loadPoolsConfigs();
   
-  // Обработчик формы
-  document.getElementById('adminConfigForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveAdminConfig();
-  });
+  // Обработчики модального окна редактирования настроек пула
+  const closePoolConfigModalBtn = document.getElementById('closePoolConfigModalBtn');
+  if (closePoolConfigModalBtn) {
+    closePoolConfigModalBtn.addEventListener('click', closePoolConfigModal);
+  }
+  
+  const savePoolConfigBtn = document.getElementById('savePoolConfigBtn');
+  if (savePoolConfigBtn) {
+    savePoolConfigBtn.addEventListener('click', savePoolConfigFromModal);
+  }
+  
+  const poolConfigModal = document.getElementById('poolConfigModal');
+  if (poolConfigModal) {
+    poolConfigModal.addEventListener('click', (e) => {
+      if (e.target.id === 'poolConfigModal') {
+        closePoolConfigModal();
+      }
+    });
+  }
   
   // Загружаем позиции и статистику
   loadPositions();
@@ -2340,6 +2655,7 @@ function initAdminPanel() {
   positionsRefreshInterval = setInterval(() => {
     loadPositions();
     updateAdminStats();
+    loadPoolsConfigs(); // Обновляем список пулов
   }, 10000);
 }
 

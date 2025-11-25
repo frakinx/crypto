@@ -150,6 +150,7 @@ function initJupiterSwap() {
   initTokenSearch();
   loadTokenList().then(() => {
     buildTokenIndexes();
+    updateSwapAmountHint(); // Обновляем подсказку после загрузки токенов
   });
 
   // Quick chips
@@ -202,6 +203,46 @@ function hideTokenListStatus() {
   }
 }
 
+// Конвертация из обычных единиц в минимальные единицы (с учетом decimals)
+function convertToSmallestUnits(amount, decimals) {
+  if (!decimals || decimals === 0) {
+    // Если decimals неизвестен, предполагаем стандартные значения
+    // SOL = 9, USDC/USDT = 6
+    return Math.floor(Number(amount) * 1e9);
+  }
+  return Math.floor(Number(amount) * Math.pow(10, decimals));
+}
+
+// Получить decimals токена
+function getTokenDecimals(mintAddress) {
+  const token = tokenIndexByAddress.get(mintAddress);
+  if (token && token.decimals !== undefined) {
+    return token.decimals;
+  }
+  // Дефолтные значения для популярных токенов
+  const defaultDecimals = {
+    'So11111111111111111111111111111111111111112': 9, // SOL
+    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 6, // USDC
+    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 6, // USDT
+  };
+  return defaultDecimals[mintAddress] || 9; // По умолчанию 9 (как SOL)
+}
+
+// Обновить подсказку для суммы свапа
+function updateSwapAmountHint() {
+  const inputMint = document.getElementById('inputMint')?.value?.trim();
+  const hintEl = document.getElementById('swapAmountHint');
+  if (!hintEl) return;
+  
+  if (inputMint) {
+    const token = tokenIndexByAddress.get(inputMint);
+    const symbol = token?.symbol || 'токена';
+    hintEl.textContent = `Введите количество в единицах ${symbol} (например, 1 для 1 ${symbol})`;
+  } else {
+    hintEl.textContent = 'Введите количество токенов (например, 1 для 1 SOL, 100 для 100 USDC)';
+  }
+}
+
 async function handleGetJupQuote() {
   try {
     hideTokenListStatus();
@@ -213,7 +254,7 @@ async function handleGetJupQuote() {
     const slippageBpsStr = document.getElementById('swapSlippage').value.trim();
 
     if (!inputMint || !outputMint || !amountStr) {
-      showJupQuoteStatus('Введите inputMint, outputMint и amount', 'error');
+      showJupQuoteStatus('Введите токены и сумму', 'error');
       const swapStatus = document.getElementById('swap-status');
       if (swapStatus) {
         swapStatus.style.display = 'block';
@@ -223,10 +264,14 @@ async function handleGetJupQuote() {
       return;
     }
 
+    // Конвертируем из обычных единиц в минимальные единицы
+    const decimals = getTokenDecimals(inputMint);
+    const amountInSmallestUnits = convertToSmallestUnits(amountStr, decimals);
+
     const payload = {
       inputMint,
       outputMint,
-      amount: Number(amountStr),
+      amount: amountInSmallestUnits,
       slippageBps: Number(slippageBpsStr) || 100,
     };
 
@@ -373,6 +418,11 @@ function initTokenSearch() {
           mintEl.value = token.address;
           infoEl.innerHTML = `${token.name || ''} (${token.address})`;
           dropdownEl.style.display = 'none';
+          
+          // Обновляем подсказку для суммы свапа
+          if (inputEl.id === 'inputTokenSearch') {
+            updateSwapAmountHint();
+          }
         });
         dropdownEl.appendChild(option);
       });
@@ -400,6 +450,11 @@ function initTokenSearch() {
         if (exact) {
           mintEl.value = exact.address;
           infoEl.innerHTML = `${exact.name || ''} (${exact.address})`;
+          
+          // Обновляем подсказку для суммы свапа
+          if (inputEl.id === 'inputTokenSearch') {
+            updateSwapAmountHint();
+          }
         }
 
         const localResults = searchTokensLocal(query);
@@ -442,6 +497,13 @@ function initTokenSearch() {
         dropdownEl.style.display = 'block';
       }
     });
+    
+    // Обновляем подсказку при изменении mint
+    mintEl.addEventListener('change', () => {
+      if (inputEl.id === 'inputTokenSearch') {
+        updateSwapAmountHint();
+      }
+    });
 
     // Hide on escape
     inputEl.addEventListener('keydown', (e) => {
@@ -472,6 +534,12 @@ function setTokenQuick(role, symbol) {
   searchEl.value = sym;
   const token = tokenIndexByAddress.get(address) || { symbol: sym, name: sym, address };
   infoEl.innerHTML = `${token.name || token.symbol || sym} (${address})`;
+  
+  // Обновляем подсказку для суммы свапа
+  if (role === 'input') {
+    updateSwapAmountHint();
+  }
+  
   // activate chip UI handled in initJupiterSwap click handler
 }
 

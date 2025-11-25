@@ -8,7 +8,7 @@ import { getConnection } from './rpc.js';
 import { getQuote as jupGetQuote, createSwapTransaction as jupCreateSwapTx } from './dex/jupiter.js';
 import { createOpenPositionTransaction, createClosePositionTransaction } from './dex/meteora.js';
 import { CONFIG } from './config.js';
-import { loadAdminConfig, saveAdminConfig, type AdminConfig } from './position-monitoring/config.js';
+import { loadAdminConfig, saveAdminConfig, getPoolConfig, savePoolConfig, getPoolConfigOrDefault, getAllPoolConfigs, type AdminConfig, type PoolConfig } from './position-monitoring/config.js';
 
 type TokenInfo = {
   address: string;
@@ -607,6 +607,69 @@ app.post('/api/admin/config', (req, res) => {
   } catch (error) {
     console.error('Error saving admin config:', error);
     res.status(500).json({ error: 'Failed to save admin config' });
+  }
+});
+
+// Получить настройки для конкретного пула
+app.get('/api/admin/pool-config/:poolAddress', (req, res) => {
+  try {
+    const { poolAddress } = req.params;
+    
+    // Валидация адреса пула
+    try {
+      new PublicKey(poolAddress);
+    } catch (e) {
+      return res.status(400).json({ error: 'Некорректный адрес пула' });
+    }
+    
+    const config = getPoolConfig(poolAddress);
+    if (!config) {
+      return res.status(404).json({ error: 'Настройки для этого пула не найдены' });
+    }
+    
+    res.json(config);
+  } catch (error) {
+    console.error('Error loading pool config:', error);
+    res.status(500).json({ error: 'Failed to load pool config' });
+  }
+});
+
+// Сохранить настройки для конкретного пула
+app.post('/api/admin/pool-config/:poolAddress', (req, res) => {
+  try {
+    const { poolAddress } = req.params;
+    const config = req.body as PoolConfig;
+    
+    // Валидация адреса пула
+    try {
+      new PublicKey(poolAddress);
+    } catch (e) {
+      return res.status(400).json({ error: 'Некорректный адрес пула' });
+    }
+    
+    // Валидация конфигурации
+    if (!config.priceCorridorPercent || 
+        typeof config.priceCorridorPercent.upper !== 'number' ||
+        typeof config.priceCorridorPercent.lower !== 'number') {
+      return res.status(400).json({ error: 'Некорректная конфигурация priceCorridorPercent' });
+    }
+    
+    savePoolConfig(poolAddress, config);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving pool config:', error);
+    res.status(500).json({ error: 'Failed to save pool config' });
+  }
+});
+
+// Получить все пулы с настройками
+app.get('/api/admin/pool-configs', (req, res) => {
+  try {
+    const configs = getAllPoolConfigs();
+    res.json(configs);
+  } catch (error) {
+    console.error('Error loading pool configs:', error);
+    res.status(500).json({ error: 'Failed to load pool configs' });
   }
 });
 

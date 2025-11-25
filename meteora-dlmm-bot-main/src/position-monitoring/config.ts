@@ -91,3 +91,74 @@ export function saveAdminConfig(config: AdminConfig): void {
   console.log('Admin config saved:', config);
 }
 
+/**
+ * Тип для настроек конкретного пула (упрощенная версия AdminConfig)
+ */
+export type PoolConfig = {
+  priceCorridorPercent: {
+    upper: number;
+    lower: number;
+  };
+  stopLossPercent: number;
+  feeCheckPercent: number;
+  takeProfitPercent: number;
+  mirrorSwap: {
+    enabled: boolean;
+    hedgeAmountPercent: number;
+    slippageBps: number;
+  };
+  averagePriceClose: {
+    enabled: boolean;
+    percentDeviation: number;
+  };
+};
+
+// Хранилище настроек по пулам (в памяти, можно заменить на БД)
+const poolConfigs: Map<string, PoolConfig> = new Map();
+
+/**
+ * Получить настройки для конкретного пула
+ */
+export function getPoolConfig(poolAddress: string): PoolConfig | null {
+  return poolConfigs.get(poolAddress) || null;
+}
+
+/**
+ * Сохранить настройки для конкретного пула
+ */
+export function savePoolConfig(poolAddress: string, config: PoolConfig): void {
+  poolConfigs.set(poolAddress, { ...config });
+  console.log(`Pool config saved for ${poolAddress}:`, config);
+}
+
+/**
+ * Получить настройки пула или использовать настройки по умолчанию
+ */
+export function getPoolConfigOrDefault(poolAddress: string): PoolConfig {
+  const poolConfig = getPoolConfig(poolAddress);
+  if (poolConfig) {
+    return poolConfig;
+  }
+  
+  // Возвращаем упрощенную версию дефолтной конфигурации
+  return {
+    priceCorridorPercent: DEFAULT_ADMIN_CONFIG.priceCorridorPercent,
+    stopLossPercent: DEFAULT_ADMIN_CONFIG.stopLossPercent,
+    feeCheckPercent: DEFAULT_ADMIN_CONFIG.feeCheckPercent,
+    takeProfitPercent: DEFAULT_ADMIN_CONFIG.takeProfitPercent,
+    mirrorSwap: DEFAULT_ADMIN_CONFIG.mirrorSwap,
+    averagePriceClose: DEFAULT_ADMIN_CONFIG.averagePriceClose,
+  };
+}
+
+/**
+ * Получить все настройки пулов
+ */
+export function getAllPoolConfigs(): Record<string, PoolConfig> {
+  const result: Record<string, PoolConfig> = {};
+  poolConfigs.forEach((config, address) => {
+    result[address] = config;
+  });
+  return result;
+}
+

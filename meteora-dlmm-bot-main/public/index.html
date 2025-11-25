@@ -70,63 +70,13 @@
       <div class="admin-section">
         <h2>⚙️ Админ панель - Мониторинг позиций</h2>
         
-        <div class="admin-config">
-          <h3>📋 Конфигурация мониторинга</h3>
-          <form id="adminConfigForm">
-            <div class="form-group">
-              <label>Коридор цен (верхний %):</label>
-              <input type="number" id="priceCorridorUpper" step="0.1" min="0" max="100" value="4" />
-            </div>
-            <div class="form-group">
-              <label>Коридор цен (нижний %):</label>
-              <input type="number" id="priceCorridorLower" step="0.1" min="0" max="100" value="4" />
-            </div>
-            <div class="form-group">
-              <label>Stop Loss (%):</label>
-              <input type="number" id="stopLossPercent" step="0.1" min="-10" max="0" value="-2" />
-            </div>
-            <div class="form-group">
-              <label>Проверка Fee (% от нижней границы):</label>
-              <input type="number" id="feeCheckPercent" step="0.1" min="0" max="100" value="50" />
-            </div>
-            <div class="form-group">
-              <label>Take Profit (%):</label>
-              <input type="number" id="takeProfitPercent" step="0.1" min="0" max="100" value="2" />
-            </div>
-            <div class="form-group">
-              <label>Интервал проверки (мс):</label>
-              <input type="number" id="checkIntervalMs" step="1000" min="1000" value="30000" />
-            </div>
-            <div class="form-group">
-              <label>Интервал обновления цены (мс):</label>
-              <input type="number" id="priceUpdateIntervalMs" step="1000" min="1000" value="10000" />
-            </div>
-            <div class="form-group">
-              <label>
-                <input type="checkbox" id="mirrorSwapEnabled" checked />
-                Включить Mirror Swapping
-              </label>
-            </div>
-            <div class="form-group">
-              <label>Hedge Amount (%):</label>
-              <input type="number" id="hedgeAmountPercent" step="1" min="0" max="100" value="50" />
-            </div>
-            <div class="form-group">
-              <label>Slippage для Hedge (bps):</label>
-              <input type="number" id="slippageBps" step="1" min="0" max="10000" value="100" />
-            </div>
-            <div class="form-group">
-              <label>
-                <input type="checkbox" id="averagePriceCloseEnabled" checked />
-                Закрытие по средней цене
-              </label>
-            </div>
-            <div class="form-group">
-              <label>Отклонение от средней цены (%):</label>
-              <input type="number" id="averagePriceDeviation" step="0.1" min="0" max="10" value="2" />
-            </div>
-            <button type="submit" class="btn-primary">💾 Сохранить конфигурацию</button>
-          </form>
+        <div class="admin-pools-config">
+          <h3>🏊 Настройки пулов</h3>
+          <p style="color: rgba(255, 255, 255, 0.7); font-size: 0.9em; margin-bottom: 15px;">
+            Здесь отображаются настройки для каждого пула. Настройки можно задать при открытии позиции в пуле или отредактировать здесь. 
+            Каждый пул имеет свои индивидуальные настройки мониторинга позиций.
+          </p>
+          <div id="poolsConfigList" class="pools-config-list"></div>
         </div>
 
         <div class="admin-positions">
@@ -216,9 +166,9 @@
             <div id="outputTokenInfo" class="token-info"></div>
           </div>
           <div class="form-group">
-            <label for="swapAmount">Amount (in smallest units of input mint):</label>
-            <input type="number" id="swapAmount" placeholder="Напр., для 0.1 SOL в лампортах: 100000000" />
-            <small>Вводите сумму в минимальных единицах токена (например, лампорты для SOL)</small>
+            <label for="swapAmount">Amount (в единицах токена):</label>
+            <input type="number" id="swapAmount" step="0.000000001" placeholder="Например: 1 для 1 SOL" />
+            <small id="swapAmountHint">Введите количество токенов (например, 1 для 1 SOL, 100 для 100 USDC)</small>
           </div>
           <div class="form-group">
             <label for="swapSlippage">Slippage (bps):</label>
@@ -442,6 +392,80 @@
     </div>
   </div>
 
+  <!-- Pool Config Edit Modal -->
+  <div id="poolConfigModal" class="pool-modal">
+    <div class="pool-modal-content">
+      <div class="pool-modal-header">
+        <h2 id="poolConfigModalTitle">Настройки пула</h2>
+        <button class="pool-modal-close" id="closePoolConfigModalBtn">&times;</button>
+      </div>
+      <div class="pool-modal-body">
+        <div id="poolConfigModalContent">
+          <div class="pool-config-form-container">
+            <div class="form-group">
+              <label style="color: white;">Адрес пула:</label>
+              <input type="text" id="editPoolAddress" readonly style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white; font-family: monospace;" />
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (верхний %):</label>
+                <input type="number" id="editPriceCorridorUpper" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (нижний %):</label>
+                <input type="number" id="editPriceCorridorLower" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Stop Loss (%):</label>
+                <input type="number" id="editStopLossPercent" step="0.1" min="-10" max="0" value="-2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Take Profit (%):</label>
+                <input type="number" id="editTakeProfitPercent" step="0.1" min="0" max="100" value="2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Проверка Fee (%):</label>
+                <input type="number" id="editFeeCheckPercent" step="0.1" min="0" max="100" value="50" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="editMirrorSwapEnabled" checked style="width: auto; margin: 0;" />
+                  Mirror Swap
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Hedge Amount (%):</label>
+                <input type="number" id="editHedgeAmountPercent" step="1" min="0" max="100" value="50" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Slippage (bps):</label>
+                <input type="number" id="editSlippageBps" step="1" min="0" max="10000" value="100" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="editAveragePriceCloseEnabled" checked style="width: auto; margin: 0;" />
+                  Закрытие по средней цене
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Отклонение от средней (%):</label>
+                <input type="number" id="editAveragePriceDeviation" step="0.1" min="0" max="10" value="2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+              </div>
+            </div>
+            <div class="form-actions" style="margin-top: 20px;">
+              <button type="button" id="savePoolConfigBtn" class="save-btn" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;">
+                💾 Сохранить настройки
+              </button>
+            </div>
+            <div id="poolConfigModalStatus" class="rpc-status" style="display: none; margin-top: 15px;">
+              <div class="status-message"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Pool Detail Modal -->
   <div id="poolModal" class="pool-modal">
     <div class="pool-modal-content">
@@ -515,35 +539,99 @@
           </div>
 
           <!-- Open Position Section -->
-          <div class="open-position-section" style="margin-top: 30px; padding: 20px; background: #f5f5f5; border-radius: 8px;">
-            <h3 style="margin-top: 0;">Открыть позицию в пуле</h3>
+          <div class="open-position-section" style="margin-top: 30px; padding: 20px; background: rgba(15, 15, 30, 0.6); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <h3 style="margin-top: 0; color: white; font-size: 1.3em; margin-bottom: 20px;">Открыть позицию в пуле</h3>
+            
+            <!-- Pool Settings Section -->
+            <div class="pool-settings-section" style="margin-bottom: 25px; padding: 20px; background: rgba(102, 126, 234, 0.1); border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.3);">
+              <h4 style="color: white; font-size: 1.1em; margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+                <span>⚙️</span> Настройки мониторинга для этого пула
+              </h4>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (верхний %):</label>
+                  <input type="number" id="poolPriceCorridorUpper" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (нижний %):</label>
+                  <input type="number" id="poolPriceCorridorLower" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Stop Loss (%):</label>
+                  <input type="number" id="poolStopLossPercent" step="0.1" min="-10" max="0" value="-2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Take Profit (%):</label>
+                  <input type="number" id="poolTakeProfitPercent" step="0.1" min="0" max="100" value="2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Проверка Fee (%):</label>
+                  <input type="number" id="poolFeeCheckPercent" step="0.1" min="0" max="100" value="50" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="poolMirrorSwapEnabled" checked style="width: auto; margin: 0;" />
+                    Mirror Swap
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Hedge Amount (%):</label>
+                  <input type="number" id="poolHedgeAmountPercent" step="1" min="0" max="100" value="50" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Slippage (bps):</label>
+                  <input type="number" id="poolSlippageBps" step="1" min="0" max="10000" value="100" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="poolAveragePriceCloseEnabled" checked style="width: auto; margin: 0;" />
+                    Закрытие по средней цене
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Отклонение от средней (%):</label>
+                  <input type="number" id="poolAveragePriceDeviation" step="0.1" min="0" max="10" value="2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                </div>
+              </div>
+              <button type="button" id="savePoolSettingsBtn" style="margin-top: 15px; padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                💾 Сохранить настройки пула
+              </button>
+            </div>
+
             <form id="openPositionForm">
               <div class="form-group">
-                <label for="positionStrategy">Стратегия:</label>
-                <select id="positionStrategy" required>
+                <label for="positionStrategy" style="color: white;">Стратегия:</label>
+                <select id="positionStrategy" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;">
                   <option value="balance">Balance (50/50)</option>
                   <option value="imbalance">Imbalance (неравномерная)</option>
                   <option value="oneSide">One Side (односторонняя)</option>
                 </select>
               </div>
               <div class="form-group">
-                <label for="positionRangeInterval">Диапазон (количество bins с каждой стороны):</label>
-                <input type="number" id="positionRangeInterval" value="10" min="1" max="100" required />
-                <small>Количество bins с каждой стороны от активного bin</small>
+                <label for="positionRangeInterval" style="color: white;">Диапазон (количество bins с каждой стороны):</label>
+                <input type="number" id="positionRangeInterval" value="10" min="1" max="100" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                <small style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Количество bins с каждой стороны от активного bin</small>
               </div>
               <div class="form-group">
-                <label for="positionTokenXAmount">Количество Token X (в минимальных единицах):</label>
-                <input type="number" id="positionTokenXAmount" placeholder="0" step="0.000000001" required />
+                <label for="positionTokenXAmount" style="color: white;">Количество Token X:</label>
+                <input type="number" id="positionTokenXAmount" placeholder="0" step="0.000000001" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                <small id="positionTokenXHint" style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Введите количество в единицах токена (например, 1 для 1 SOL)</small>
               </div>
               <div class="form-group">
-                <label for="positionTokenYAmount">Количество Token Y (в минимальных единицах):</label>
-                <input type="number" id="positionTokenYAmount" placeholder="0" step="0.000000001" required />
+                <label for="positionTokenYAmount" style="color: white;">Количество Token Y:</label>
+                <input type="number" id="positionTokenYAmount" placeholder="0" step="0.000000001" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                <small id="positionTokenYHint" style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Введите количество в единицах токена (например, 100 для 100 USDC)</small>
               </div>
               <div class="form-actions" style="margin-top: 15px;">
-                <button type="submit" id="openPositionBtn" class="save-btn">Открыть позицию</button>
+                <button type="submit" id="openPositionBtn" class="save-btn" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;">
+                  🚀 Открыть позицию
+                </button>
               </div>
             </form>
             <div id="positionStatus" class="rpc-status" style="display: none; margin-top: 15px;">
+              <div class="status-message"></div>
+            </div>
+            <div id="poolSettingsStatus" class="rpc-status" style="display: none; margin-top: 15px;">
               <div class="status-message"></div>
             </div>
           </div>
