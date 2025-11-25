@@ -7,7 +7,9 @@
     "build": "tsc -p .",
     "start": "node --env-file=.env --enable-source-maps dist/index.js",
     "dev": "ts-node-esm --esm src/index.ts",
-    "server": "tsx src/server.ts",
+    "server": "concurrently -n \"WEB,BOT\" -c \"cyan,magenta\" \"tsx src/server.ts\" \"tsx src/index.ts\"",
+    "server:web": "tsx src/server.ts",
+    "server:bot": "tsx src/index.ts",
     "lint": "echo 'add your linter'",
     "postinstall": "patch-package"
   },
@@ -29,6 +31,7 @@
     "@types/bn.js": "^5.2.0",
     "@types/node": "^20.11.17",
     "@types/yargs": "^17.0.32",
+    "concurrently": "^9.2.1",
     "patch-package": "^8.0.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
