@@ -138,12 +138,26 @@ async function fetchTokenSuggestions(query) {
 function initJupiterSwap() {
   const getQuoteBtn = document.getElementById('jupGetQuoteBtn');
   const swapBtn = document.getElementById('jupSwapBtn');
+  const swapAmountInput = document.getElementById('swapAmount');
+  const inputMintEl = document.getElementById('inputMint');
+  const outputMintEl = document.getElementById('outputMint');
 
   if (getQuoteBtn) {
     getQuoteBtn.addEventListener('click', handleGetJupQuote);
   }
   if (swapBtn) {
     swapBtn.addEventListener('click', handleDoJupSwap);
+  }
+
+  // Добавляем обработчики для реального времени обновления котировки
+  if (swapAmountInput) {
+    swapAmountInput.addEventListener('input', debounceUpdateSwapPreview);
+  }
+  if (inputMintEl) {
+    inputMintEl.addEventListener('change', debounceUpdateSwapPreview);
+  }
+  if (outputMintEl) {
+    outputMintEl.addEventListener('change', debounceUpdateSwapPreview);
   }
 
   // Enable autocomplete immediately, token list loads in background
@@ -163,6 +177,8 @@ function initJupiterSwap() {
       document.querySelectorAll(`.token-chip[data-role="${role}"]`).forEach(b => {
         b.classList.toggle('active', b.getAttribute('data-symbol') === sym);
       });
+      // Обновляем превью после выбора токена
+      setTimeout(debounceUpdateSwapPreview, 100);
     });
   });
 }
@@ -243,6 +259,116 @@ function updateSwapAmountHint() {
   }
 }
 
+// Конвертация из минимальных единиц в обычные единицы
+function convertFromSmallestUnits(amount, decimals) {
+  if (!decimals || decimals === 0) {
+    return Number(amount) / 1e9;
+  }
+  return Number(amount) / Math.pow(10, decimals);
+}
+
+// Debounce для обновления превью свапа
+let swapPreviewTimeout = null;
+function debounceUpdateSwapPreview() {
+  if (swapPreviewTimeout) {
+    clearTimeout(swapPreviewTimeout);
+  }
+  swapPreviewTimeout = setTimeout(() => {
+    updateSwapPreview();
+  }, 500); // Задержка 500ms для уменьшения количества запросов
+}
+
+// Обновление превью свапа в реальном времени
+async function updateSwapPreview() {
+  const previewEl = document.getElementById('swapPreviewResult');
+  const inputAmountEl = document.getElementById('swapAmount');
+  const inputMintEl = document.getElementById('inputMint');
+  const outputMintEl = document.getElementById('outputMint');
+  
+  if (!previewEl || !inputAmountEl || !inputMintEl || !outputMintEl) return;
+  
+  const inputMint = inputMintEl.value?.trim();
+  const outputMint = outputMintEl.value?.trim();
+  const amountStr = inputAmountEl.value?.trim();
+  
+  // Скрываем превью, если не все данные заполнены
+  if (!inputMint || !outputMint || !amountStr || parseFloat(amountStr) <= 0) {
+    previewEl.style.display = 'none';
+    return;
+  }
+  
+  // Если токены одинаковые, скрываем превью
+  if (inputMint === outputMint) {
+    previewEl.style.display = 'none';
+    return;
+  }
+  
+  try {
+    // Показываем индикатор загрузки
+    previewEl.style.display = 'block';
+    document.getElementById('swapPreviewInput').textContent = 'Загрузка...';
+    document.getElementById('swapPreviewOutput').textContent = 'Загрузка...';
+    document.getElementById('swapPreviewRate').textContent = 'Загрузка...';
+    
+    // Получаем decimals для входного токена
+    const inputDecimals = getTokenDecimals(inputMint);
+    const amountInSmallestUnits = convertToSmallestUnits(amountStr, inputDecimals);
+    
+    // Получаем котировку
+    const slippageBps = parseInt(document.getElementById('swapSlippage')?.value || '100');
+    const res = await fetch('/api/jup/quote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        inputMint,
+        outputMint,
+        amount: amountInSmallestUnits,
+        slippageBps,
+      }),
+    });
+    
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Failed to get quote');
+    }
+    
+    const quote = await res.json();
+    
+    // Получаем decimals для выходного токена
+    const outputDecimals = getTokenDecimals(outputMint);
+    
+    // Конвертируем суммы в обычные единицы
+    const inputAmount = parseFloat(amountStr);
+    const outputAmount = convertFromSmallestUnits(
+      quote.outAmount || quote.outputAmount || '0',
+      outputDecimals
+    );
+    
+    // Получаем символы токенов
+    const inputToken = tokenIndexByAddress.get(inputMint);
+    const outputToken = tokenIndexByAddress.get(outputMint);
+    const inputSymbol = inputToken?.symbol || 'Token';
+    const outputSymbol = outputToken?.symbol || 'Token';
+    
+    // Рассчитываем курс обмена
+    const rate = inputAmount > 0 ? (outputAmount / inputAmount).toFixed(6) : '0';
+    const rateText = `1 ${inputSymbol} = ${rate} ${outputSymbol}`;
+    
+    // Обновляем отображение
+    document.getElementById('swapPreviewInput').textContent = `${inputAmount.toFixed(9)} ${inputSymbol}`;
+    document.getElementById('swapPreviewOutput').textContent = `${outputAmount.toFixed(9)} ${outputSymbol}`;
+    document.getElementById('swapPreviewRate').textContent = rateText;
+    
+    // Сохраняем котировку для использования при свапе
+    lastJupQuote = quote;
+    
+  } catch (error) {
+    console.error('Error updating swap preview:', error);
+    // Скрываем превью при ошибке или показываем сообщение об ошибке
+    previewEl.style.display = 'none';
+  }
+}
+
 async function handleGetJupQuote() {
   try {
     hideTokenListStatus();
@@ -265,7 +391,8 @@ async function handleGetJupQuote() {
     }
 
     // Конвертируем из обычных единиц в минимальные единицы
-    const decimals = getTokenDecimals(inputMint);
+    // Для новых токенов получаем decimals из блокчейна
+    const decimals = await getTokenDecimals(inputMint);
     const amountInSmallestUnits = convertToSmallestUnits(amountStr, decimals);
 
     const payload = {
@@ -423,6 +550,9 @@ function initTokenSearch() {
           if (inputEl.id === 'inputTokenSearch') {
             updateSwapAmountHint();
           }
+          
+          // Обновляем превью свапа после выбора токена
+          setTimeout(debounceUpdateSwapPreview, 100);
         });
         dropdownEl.appendChild(option);
       });
@@ -445,6 +575,22 @@ function initTokenSearch() {
           return;
         }
 
+        // Если введен валидный mint адрес - сразу использовать его (поддержка новых токенов!)
+        if (isValidSolanaAddress(query)) {
+          mintEl.value = query;
+          infoEl.innerHTML = `Новый токен (${query})`;
+          dropdownEl.style.display = 'none';
+          
+          // Обновляем подсказку для суммы свапа
+          if (inputEl.id === 'inputTokenSearch') {
+            updateSwapAmountHint();
+          }
+          
+          // Обновляем превью свапа
+          setTimeout(debounceUpdateSwapPreview, 100);
+          return; // Не ищем в списке, если это прямой mint адрес
+        }
+        
         // Prefill on exact symbol hit
         const exact = tokenIndexBySymbol.get(query.toLowerCase());
         if (exact) {
@@ -455,6 +601,9 @@ function initTokenSearch() {
           if (inputEl.id === 'inputTokenSearch') {
             updateSwapAmountHint();
           }
+          
+          // Обновляем превью свапа
+          setTimeout(debounceUpdateSwapPreview, 100);
         }
 
         const localResults = searchTokensLocal(query);
@@ -503,6 +652,8 @@ function initTokenSearch() {
       if (inputEl.id === 'inputTokenSearch') {
         updateSwapAmountHint();
       }
+      // Обновляем превью свапа при изменении токена
+      setTimeout(debounceUpdateSwapPreview, 100);
     });
 
     // Hide on escape
@@ -543,9 +694,26 @@ function setTokenQuick(role, symbol) {
   // activate chip UI handled in initJupiterSwap click handler
 }
 
+// Проверка, является ли строка валидным Solana адресом (mint address)
+function isValidSolanaAddress(address) {
+  if (!address || typeof address !== 'string') return false;
+  const trimmed = address.trim();
+  // Solana адреса в base58, обычно 32-44 символа
+  if (trimmed.length < 32 || trimmed.length > 44) return false;
+  // Проверяем, что это base58 (только допустимые символы)
+  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]+$/;
+  return base58Regex.test(trimmed);
+}
+
 function resolveMintFromQuery(query) {
   if (!query) return null;
   const q = String(query).trim();
+  
+  // Сначала проверяем, не является ли это прямым mint адресом
+  if (isValidSolanaAddress(q)) {
+    return q;
+  }
+  
   // Exact address
   const exactAddr = tokenList.find(t => t.address === q);
   if (exactAddr) return exactAddr.address;

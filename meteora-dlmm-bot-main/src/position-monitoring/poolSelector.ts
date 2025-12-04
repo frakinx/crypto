@@ -34,6 +34,8 @@ export class PoolSelector {
   ): Promise<DlmmPair | null> {
     // Получаем все пулы
     const allPools = await fetchDlmmPairs();
+    console.log(`[PoolSelector] Searching for pools with tokens: ${tokenXMint.substring(0, 8)}.../${tokenYMint.substring(0, 8)}...`);
+    console.log(`[PoolSelector] Total pools available: ${allPools.length}`);
 
     // Фильтруем по токенам
     const matchingPools = allPools.filter(pool => {
@@ -42,8 +44,18 @@ export class PoolSelector {
       return matchesX && matchesY;
     });
 
+    console.log(`[PoolSelector] Found ${matchingPools.length} pools matching token pair`);
+
     if (matchingPools.length === 0) {
-      console.warn(`No pools found for ${tokenXMint}/${tokenYMint}`);
+      console.warn(`[PoolSelector] No pools found for ${tokenXMint.substring(0, 8)}.../${tokenYMint.substring(0, 8)}...`);
+      // Показываем первые несколько пулов для отладки
+      if (allPools.length > 0) {
+        console.log(`[PoolSelector] Sample pools (first 3):`, allPools.slice(0, 3).map(p => ({
+          address: p.address.substring(0, 8) + '...',
+          tokenXMint: p.tokenXMint.substring(0, 8) + '...',
+          tokenYMint: p.tokenYMint.substring(0, 8) + '...',
+        })));
+      }
       return null;
     }
 

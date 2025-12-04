@@ -56,6 +56,135 @@ const LAUNCHPADS = [
 ];
 
 // Форматирование чисел
+/**
+ * Показать уведомление об успешном закрытии позиции
+ */
+function showSuccessNotification(title, message, signature) {
+  // Создаем контейнер для уведомлений, если его еще нет
+  let notificationContainer = document.getElementById('notificationContainer');
+  if (!notificationContainer) {
+    notificationContainer = document.createElement('div');
+    notificationContainer.id = 'notificationContainer';
+    notificationContainer.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 400px;
+    `;
+    document.body.appendChild(notificationContainer);
+  }
+
+  // Создаем элемент уведомления
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.95) 0%, rgba(56, 142, 60, 0.95) 100%);
+    border: 2px solid rgba(76, 175, 80, 0.8);
+    border-radius: 12px;
+    padding: 20px;
+    color: white;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    animation: slideInRight 0.3s ease-out;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+  `;
+
+  // Добавляем анимацию появления
+  if (!document.getElementById('notificationStyles')) {
+    const style = document.createElement('style');
+    style.id = 'notificationStyles';
+    style.textContent = `
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes slideOutRight {
+        from {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  notification.innerHTML = `
+    <div style="display: flex; align-items: flex-start; gap: 12px;">
+      <div style="font-size: 24px; flex-shrink: 0;">✅</div>
+      <div style="flex: 1;">
+        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px;">${title}</div>
+        <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">${message}</div>
+        ${signature ? `
+          <div style="font-size: 12px; opacity: 0.8; word-break: break-all; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.2);">
+            <strong>Signature:</strong><br>
+            <code style="background: rgba(0, 0, 0, 0.2); padding: 4px 6px; border-radius: 4px; font-family: monospace;">${signature}</code>
+          </div>
+        ` : ''}
+      </div>
+      <button style="
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        flex-shrink: 0;
+        transition: background 0.2s;
+      " onclick="this.parentElement.parentElement.remove()" title="Закрыть">×</button>
+    </div>
+  `;
+
+  // Добавляем эффект при наведении
+  notification.addEventListener('mouseenter', () => {
+    notification.style.transform = 'translateX(-5px)';
+    notification.style.boxShadow = '0 12px 40px rgba(0, 0, 0, 0.4)';
+  });
+  notification.addEventListener('mouseleave', () => {
+    notification.style.transform = 'translateX(0)';
+    notification.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.3)';
+  });
+
+  // Добавляем уведомление в контейнер
+  notificationContainer.appendChild(notification);
+
+  // Автоматически удаляем через 15 секунд
+  setTimeout(() => {
+    if (notification.parentElement) {
+      notification.style.animation = 'slideOutRight 0.3s ease-out';
+      setTimeout(() => {
+        if (notification.parentElement) {
+          notification.remove();
+        }
+      }, 300);
+    }
+  }, 15000);
+
+  // При клике на уведомление открываем Solscan
+  if (signature) {
+    notification.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'BUTTON') {
+        window.open(`https://solscan.io/tx/${signature}`, '_blank');
+      }
+    });
+  }
+}
+
 function formatNumber(num) {
   if (num === 0 || !num) return '0';
   if (num < 0.01) return num.toExponential(2);
@@ -1123,6 +1252,11 @@ async function connectPhantom() {
     
     // Fetch balance (this will update UI when done)
     updateWalletBalance();
+    
+    // Загружаем позиции пользователя
+    await loadUserPositions();
+    // Обновляем статистику
+    await updateAdminStats();
 
     // Listen for disconnect
     provider.on('disconnect', handleWalletDisconnect);
@@ -1151,11 +1285,18 @@ async function disconnectWallet() {
   }
 }
 
-function handleWalletDisconnect() {
+async function handleWalletDisconnect() {
   phantomWallet = null;
   walletPublicKey = null;
   walletBalance = null;
   updateWalletUI();
+  // Очищаем список позиций
+  const positionsList = document.getElementById('positionsList');
+  if (positionsList) {
+    positionsList.innerHTML = '<p style="color: rgba(255, 255, 255, 0.7);">Подключите кошелек для просмотра позиций</p>';
+  }
+  // Сбрасываем статистику
+  await updateAdminStats();
 }
 
 function updateWalletUI() {
@@ -1499,11 +1640,35 @@ async function openPoolModal(poolAddress) {
     }
     
     // Заполняем статистику
-    document.getElementById('poolDetailBinStep').textContent = poolData.bin_step || poolData.binStep || '-';
-    document.getElementById('poolDetailActiveBin').textContent = poolData.active_bin || poolData.activeBin || '-';
+    const binStep = poolData.bin_step || poolData.binStep || poolData.binStepValue || null;
+    // Пробуем разные варианты названий поля activeBin
+    const activeBin = poolData.active_bin || poolData.activeBin || poolData.activeBinId || 
+                      poolData.current_bin || poolData.currentBin || 
+                      (poolData.activeBinData && poolData.activeBinData.binId) || null;
+    
+    console.log('[PoolData] ActiveBin search:', {
+      active_bin: poolData.active_bin,
+      activeBin: poolData.activeBin,
+      activeBinId: poolData.activeBinId,
+      current_bin: poolData.current_bin,
+      currentBin: poolData.currentBin,
+      activeBinData: poolData.activeBinData,
+      found: activeBin
+    });
+    
+    document.getElementById('poolDetailBinStep').textContent = binStep || '-';
+    document.getElementById('poolDetailActiveBin').textContent = activeBin || '-';
+    
+    // Сохраняем данные пула для расчета диапазона цен
+    currentPoolBinStep = binStep ? parseInt(binStep) : null;
+    currentPoolActiveBin = activeBin !== null && activeBin !== undefined ? parseInt(activeBin) : null;
     
     const price = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 0);
+    currentPoolPrice = price; // Сохраняем цену для использования в автобалансе
     document.getElementById('poolDetailPrice').textContent = price > 0 ? '$' + price.toFixed(6) : '-';
+    
+    // Обновляем диапазон цен при загрузке пула
+    updatePositionPriceRange();
     
     const liquidity = parseFloat(poolData.liquidity || poolData.tvl || 0);
     document.getElementById('poolDetailTVL').textContent = formatCurrency(liquidity);
@@ -1618,9 +1783,9 @@ async function openPoolModal(poolAddress) {
     
     const currentPrice = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 1);
     
-    // Получаем mint адреса токенов
-    const tokenXMint = poolData.tokenXMint || poolData.token_x_mint || poolData.base_mint;
-    const tokenYMint = poolData.tokenYMint || poolData.token_y_mint || poolData.quote_mint;
+    // Получаем mint адреса токенов (пробуем разные варианты названий полей)
+    const tokenXMint = poolData.tokenXMint || poolData.token_x_mint || poolData.mint_x || poolData.base_mint;
+    const tokenYMint = poolData.tokenYMint || poolData.token_y_mint || poolData.mint_y || poolData.quote_mint;
     
     // Сохраняем информацию о токенах для конвертации
     currentPoolTokenX = {
@@ -1644,8 +1809,21 @@ async function openPoolModal(poolAddress) {
       tokenYHint.textContent = `Введите количество в единицах ${tokenYName} (например, 100 для 100 ${tokenYName})`;
     }
     
-    // Логируем найденные названия токенов
-    console.log('Found token names:', { tokenXName, tokenYName, tokenXMint, tokenYMint, decimalsX: currentPoolTokenX.decimals, decimalsY: currentPoolTokenY.decimals });
+    // Логируем найденные названия токенов с отладкой decimals
+    console.log('Found token names:', { 
+      tokenXName, 
+      tokenYName, 
+      tokenXMint, 
+      tokenYMint, 
+      decimalsX: currentPoolTokenX.decimals, 
+      decimalsY: currentPoolTokenY.decimals,
+      tokenYMintSources: {
+        tokenYMint: poolData.tokenYMint,
+        token_y_mint: poolData.token_y_mint,
+        mint_y: poolData.mint_y,
+        quote_mint: poolData.quote_mint
+      }
+    });
     
     document.getElementById('legendTokenX').textContent = tokenXName;
     document.getElementById('legendTokenY').textContent = tokenYName;
@@ -1698,6 +1876,15 @@ function closePoolModal() {
   currentPoolAddress = null;
   currentPoolTokenX = null;
   currentPoolTokenY = null;
+  currentPoolPrice = 0;
+  currentPoolBinStep = null;
+  currentPoolActiveBin = null;
+  
+  // Скрываем диапазон цен при закрытии модального окна
+  const priceRangeEl = document.getElementById('positionPriceRange');
+  if (priceRangeEl) {
+    priceRangeEl.style.display = 'none';
+  }
   
   // Уничтожаем графики при закрытии
   if (liquidityChart) {
@@ -1963,6 +2150,92 @@ function closePairPoolsModal() {
 let currentPoolAddress = null;
 let currentPoolTokenX = null; // { mint, symbol, decimals }
 let currentPoolTokenY = null; // { mint, symbol, decimals }
+let currentPoolPrice = 0; // Текущая цена пула
+let currentPoolBinStep = null; // Bin step пула
+let currentPoolActiveBin = null; // Active bin ID пула
+
+/**
+ * Обновить отображение диапазона цен позиции на основе rangeInterval
+ */
+function updatePositionPriceRange() {
+  const priceRangeEl = document.getElementById('positionPriceRange');
+  const rangeIntervalInput = document.getElementById('positionRangeInterval');
+  
+  if (!priceRangeEl || !rangeIntervalInput) {
+    console.log('[PriceRange] Elements not found');
+    return;
+  }
+  
+  // Проверяем, есть ли все необходимые данные
+  if (!currentPoolBinStep || currentPoolActiveBin === null || !currentPoolPrice || currentPoolPrice <= 0) {
+    console.log('[PriceRange] Missing data:', {
+      binStep: currentPoolBinStep,
+      activeBin: currentPoolActiveBin,
+      price: currentPoolPrice
+    });
+    priceRangeEl.style.display = 'none';
+    return;
+  }
+  
+  const rangeInterval = parseInt(rangeIntervalInput.value) || 10;
+  
+  if (rangeInterval < 1 || rangeInterval > 100) {
+    priceRangeEl.style.display = 'none';
+    return;
+  }
+  
+  // Рассчитываем границы позиции на основе бинов
+  // Формула: price = (1 + binStep/10000)^binId
+  const base = 1 + currentPoolBinStep / 10000;
+  
+  // Для стратегии balance/imbalance: bins с обеих сторон
+  const minBinId = currentPoolActiveBin - rangeInterval;
+  const maxBinId = currentPoolActiveBin + rangeInterval;
+  
+  // Рассчитываем цены для границ (в формате Token X/Token Y)
+  const lowerBoundPriceRaw = Math.pow(base, minBinId);
+  const upperBoundPriceRaw = Math.pow(base, maxBinId + 1); // maxBinId включительный, поэтому +1 для верхней границы
+  
+  // Если текущая цена в долларах, а расчетные цены в формате Token X/Token Y,
+  // нужно использовать процентное отклонение от текущей цены
+  // Используем подход из priceMonitor.ts - процентное изменение на основе количества бинов
+  const priceChangePerBin = currentPoolBinStep / 10000;
+  const binsToLower = currentPoolActiveBin - minBinId;
+  const binsToUpper = maxBinId - currentPoolActiveBin;
+  
+  // Рассчитываем множители для границ
+  const lowerMultiplier = Math.pow(1 + priceChangePerBin, -binsToLower);
+  const upperMultiplier = Math.pow(1 + priceChangePerBin, binsToUpper);
+  
+  // Применяем к текущей цене (в долларах)
+  const lowerBoundPrice = currentPoolPrice * lowerMultiplier;
+  const upperBoundPrice = currentPoolPrice * upperMultiplier;
+  
+  // Ширина диапазона в процентах
+  const rangeWidthPercent = ((upperBoundPrice - lowerBoundPrice) / currentPoolPrice) * 100;
+  
+  // Обновляем отображение
+  const lowerBoundEl = document.getElementById('positionLowerBound');
+  const currentPriceEl = document.getElementById('positionCurrentPrice');
+  const upperBoundEl = document.getElementById('positionUpperBound');
+  const rangeWidthEl = document.getElementById('positionRangeWidth');
+  
+  if (lowerBoundEl) lowerBoundEl.textContent = '$' + lowerBoundPrice.toFixed(6);
+  if (currentPriceEl) currentPriceEl.textContent = '$' + currentPoolPrice.toFixed(6);
+  if (upperBoundEl) upperBoundEl.textContent = '$' + upperBoundPrice.toFixed(6);
+  if (rangeWidthEl) rangeWidthEl.textContent = rangeWidthPercent.toFixed(2) + '%';
+  
+  // Показываем блок
+  priceRangeEl.style.display = 'block';
+  
+  console.log('[PriceRange] Updated:', {
+    rangeInterval,
+    currentPrice: currentPoolPrice,
+    lowerBound: lowerBoundPrice,
+    upperBound: upperBoundPrice,
+    rangeWidth: rangeWidthPercent + '%'
+  });
+}
 
 // Конвертация из обычных единиц в минимальные единицы (с учетом decimals)
 function convertToSmallestUnits(amount, decimals) {
@@ -1975,12 +2248,16 @@ function convertToSmallestUnits(amount, decimals) {
 
 // Получить decimals токена из tokenIndex или дефолтные значения
 function getTokenDecimalsForPool(mintAddress) {
-  if (!mintAddress) return 9; // По умолчанию 9 (как SOL)
+  if (!mintAddress) {
+    console.warn('[getTokenDecimalsForPool] No mint address provided, using default 9');
+    return 9; // По умолчанию 9 (как SOL)
+  }
   
   // Пробуем получить из tokenIndex
   if (window.tokenIndexByAddress) {
     const token = window.tokenIndexByAddress.get(String(mintAddress));
     if (token && token.decimals !== undefined) {
+      console.log(`[getTokenDecimalsForPool] Found decimals ${token.decimals} for ${mintAddress} from tokenIndex`);
       return token.decimals;
     }
   }
@@ -1991,7 +2268,204 @@ function getTokenDecimalsForPool(mintAddress) {
     'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 6, // USDC
     'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 6, // USDT
   };
-  return defaultDecimals[mintAddress] || 9; // По умолчанию 9
+  
+  if (defaultDecimals[mintAddress]) {
+    console.log(`[getTokenDecimalsForPool] Using default decimals ${defaultDecimals[mintAddress]} for ${mintAddress}`);
+    return defaultDecimals[mintAddress];
+  }
+  
+  console.warn(`[getTokenDecimalsForPool] Unknown mint address ${mintAddress}, using default 9`);
+  return 9; // По умолчанию 9
+}
+
+// Функция для расчета автобаланса
+async function calculateAutoBalance() {
+  const totalAmountInput = document.getElementById('autoBalanceTotalAmount');
+  const tokenXInput = document.getElementById('positionTokenXAmount');
+  const tokenYInput = document.getElementById('positionTokenYAmount');
+  
+  if (!totalAmountInput || !tokenXInput || !tokenYInput) {
+    showPositionStatus('Ошибка: элементы формы не найдены', 'error');
+    return;
+  }
+  
+  const totalAmount = parseFloat(totalAmountInput.value);
+  console.log('[DEBUG] Auto balance input:', {
+    totalAmountInputValue: totalAmountInput.value,
+    totalAmountParsed: totalAmount,
+  });
+  
+  if (!totalAmount || totalAmount <= 0) {
+    showPositionStatus('Введите общую сумму больше 0', 'error');
+    return;
+  }
+  
+  if (!currentPoolAddress) {
+    showPositionStatus('Ошибка: адрес пула не найден', 'error');
+    return;
+  }
+  
+  if (!currentPoolTokenX || !currentPoolTokenY) {
+    showPositionStatus('Ошибка: информация о токенах пула не загружена', 'error');
+    return;
+  }
+  
+  try {
+    showPositionStatus('Расчет автобаланса...', 'info');
+    
+    // Используем сохраненную цену пула или пытаемся получить её
+    let currentPrice = currentPoolPrice;
+    
+    // Если цена не сохранена, пытаемся получить из списка пулов
+    if (!currentPrice || currentPrice === 0) {
+      try {
+        const poolResponse = await fetch(`/api/pools`);
+        if (poolResponse.ok) {
+          const pools = await poolResponse.json();
+          const pool = pools.find(p => p.address === currentPoolAddress);
+          if (pool) {
+            currentPrice = parseFloat(pool.price || pool.current_price || pool.price_usd || 0);
+            currentPoolPrice = currentPrice; // Сохраняем для будущего использования
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to get price from pools list:', error);
+      }
+    }
+    
+    // Если цена все еще неизвестна, используем упрощенный расчет
+    if (!currentPrice || currentPrice === 0) {
+      // Используем упрощенный расчет: делим общую сумму пополам
+      // Предполагаем, что цена примерно равна 1 для упрощения
+      const estimatedPrice = 1;
+      const tokenXAmount = (totalAmount / 2) / estimatedPrice;
+      const tokenYAmount = totalAmount / 2;
+      
+      tokenXInput.value = tokenXAmount.toFixed(9);
+      tokenYInput.value = tokenYAmount.toFixed(6);
+      
+      showPositionStatus('Автобаланс рассчитан (использована приблизительная цена). Откройте модальное окно пула для получения точной цены.', 'info');
+    } else {
+      // Точный расчет с известной ценой
+      // Для баланса 50/50: tokenXValue = tokenYValue = totalValue / 2
+      // tokenXAmount * price = totalValue / 2
+      // tokenXAmount = totalValue / (2 * price)
+      // tokenYAmount = totalValue / 2
+      
+      const tokenXAmount = (totalAmount / 2) / currentPrice;
+      const tokenYAmount = totalAmount / 2;
+      
+      // Учитываем decimals токенов для правильного отображения
+      // ВАЖНО: используем decimals из currentPoolTokenX/Y, а не дефолтные значения
+      const tokenXDecimals = currentPoolTokenX?.decimals || 9;
+      const tokenYDecimals = currentPoolTokenY?.decimals || 6;
+      
+      const tokenXValue = tokenXAmount.toFixed(Math.min(tokenXDecimals, 9));
+      const tokenYValue = tokenYAmount.toFixed(Math.min(tokenYDecimals, 6));
+      
+      tokenXInput.value = tokenXValue;
+      tokenYInput.value = tokenYValue;
+      
+      // Отладочный вывод
+      console.log('[DEBUG] Auto balance calculated:', {
+        totalAmount,
+        currentPrice,
+        tokenXAmount,
+        tokenYAmount,
+        tokenXValue,
+        tokenYValue,
+        tokenXDecimals,
+        tokenYDecimals,
+      });
+      
+      showPositionStatus(`Автобаланс рассчитан успешно! (цена: $${currentPrice.toFixed(6)})`, 'success');
+    }
+    
+    // Обновляем предварительный просмотр
+    await previewPositionAmounts();
+    
+  } catch (error) {
+    console.error('Error calculating auto balance:', error);
+    showPositionStatus('Ошибка расчета автобаланса: ' + (error.message || 'Unknown'), 'error');
+  }
+}
+
+// Функция для предварительного расчета реальных сумм
+let previewAmountsTimeout = null;
+async function previewPositionAmounts() {
+  // Очищаем предыдущий таймаут
+  if (previewAmountsTimeout) {
+    clearTimeout(previewAmountsTimeout);
+  }
+  
+  // Дебаунс: ждем 500ms после последнего изменения
+  previewAmountsTimeout = setTimeout(async () => {
+    const previewEl = document.getElementById('positionAmountPreview');
+    if (!previewEl || !currentPoolAddress) return;
+    
+    const strategy = document.getElementById('positionStrategy')?.value;
+    const rangeInterval = parseInt(document.getElementById('positionRangeInterval')?.value || '10');
+    const tokenXAmountInput = document.getElementById('positionTokenXAmount')?.value;
+    const tokenYAmountInput = document.getElementById('positionTokenYAmount')?.value;
+    
+    // Показываем предупреждение только для стратегии Balance
+    if (strategy !== 'balance' || !tokenXAmountInput || !tokenYAmountInput || 
+        parseFloat(tokenXAmountInput) <= 0 || parseFloat(tokenYAmountInput) <= 0) {
+      previewEl.style.display = 'none';
+      return;
+    }
+    
+    try {
+      // Конвертируем из обычных единиц в минимальные единицы
+      if (!currentPoolTokenX || !currentPoolTokenY) {
+        previewEl.style.display = 'none';
+        return;
+      }
+      
+      const tokenXAmount = convertToSmallestUnits(tokenXAmountInput, currentPoolTokenX.decimals).toString();
+      const tokenYAmount = convertToSmallestUnits(tokenYAmountInput || '0', currentPoolTokenY.decimals).toString();
+      
+      // Запрашиваем предварительный расчет
+      const res = await fetch('/api/meteora/preview-position-amounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poolAddress: currentPoolAddress,
+          strategy,
+          rangeInterval,
+          tokenXAmount,
+          tokenYAmount,
+        }),
+      });
+      
+      if (!res.ok) {
+        previewEl.style.display = 'none';
+        return;
+      }
+      
+      const preview = await res.json();
+      
+      // Конвертируем обратно в обычные единицы для отображения
+      const convertFromSmallestUnits = (amount, decimals) => {
+        return (Number(amount) / Math.pow(10, decimals)).toFixed(decimals > 6 ? 6 : decimals);
+      };
+      
+      const actualX = convertFromSmallestUnits(preview.actualTokenXAmount, preview.tokenXDecimals);
+      const actualY = convertFromSmallestUnits(preview.actualTokenYAmount, preview.tokenYDecimals);
+      
+      // Обновляем значения в предупреждении
+      document.getElementById('previewInputX').textContent = tokenXAmountInput + ' ' + (currentPoolTokenX.symbol || 'Token X');
+      document.getElementById('previewActualX').textContent = actualX + ' ' + (currentPoolTokenX.symbol || 'Token X');
+      document.getElementById('previewInputY').textContent = tokenYAmountInput + ' ' + (currentPoolTokenY.symbol || 'Token Y');
+      document.getElementById('previewActualY').textContent = actualY + ' ' + (currentPoolTokenY.symbol || 'Token Y');
+      
+      // Показываем предупреждение
+      previewEl.style.display = 'block';
+    } catch (error) {
+      console.error('Error previewing amounts:', error);
+      previewEl.style.display = 'none';
+    }
+  }, 500);
 }
 
 function showPositionStatus(message, type) {
@@ -2024,10 +2498,7 @@ async function loadPoolSettings(poolAddress) {
     const config = await response.json();
     
     // Заполняем форму настройками пула
-    if (config.priceCorridorPercent) {
-      document.getElementById('poolPriceCorridorUpper').value = config.priceCorridorPercent.upper || 4;
-      document.getElementById('poolPriceCorridorLower').value = config.priceCorridorPercent.lower || 4;
-    }
+    // priceCorridorPercent больше не используется - границы рассчитываются по бинам
     document.getElementById('poolStopLossPercent').value = config.stopLossPercent || -2;
     document.getElementById('poolTakeProfitPercent').value = config.takeProfitPercent || 2;
     document.getElementById('poolFeeCheckPercent').value = config.feeCheckPercent || 50;
@@ -2055,10 +2526,6 @@ async function savePoolSettings(poolAddress) {
   }
   
   const config = {
-    priceCorridorPercent: {
-      upper: parseFloat(document.getElementById('poolPriceCorridorUpper').value),
-      lower: parseFloat(document.getElementById('poolPriceCorridorLower').value),
-    },
     stopLossPercent: parseFloat(document.getElementById('poolStopLossPercent').value),
     feeCheckPercent: parseFloat(document.getElementById('poolFeeCheckPercent').value),
     takeProfitPercent: parseFloat(document.getElementById('poolTakeProfitPercent').value),
@@ -2110,6 +2577,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
+  // Добавляем обработчики для предварительного расчета сумм
+  const positionStrategy = document.getElementById('positionStrategy');
+  const positionRangeInterval = document.getElementById('positionRangeInterval');
+  const positionTokenXAmount = document.getElementById('positionTokenXAmount');
+  const positionTokenYAmount = document.getElementById('positionTokenYAmount');
+  const autoBalanceBtn = document.getElementById('autoBalanceBtn');
+  const autoBalanceTotalAmount = document.getElementById('autoBalanceTotalAmount');
+  
+  if (positionStrategy) {
+    positionStrategy.addEventListener('change', previewPositionAmounts);
+  }
+  if (positionRangeInterval) {
+    positionRangeInterval.addEventListener('input', () => {
+      previewPositionAmounts();
+      updatePositionPriceRange();
+    });
+  }
+  if (positionTokenXAmount) {
+    positionTokenXAmount.addEventListener('input', previewPositionAmounts);
+  }
+  if (positionTokenYAmount) {
+    positionTokenYAmount.addEventListener('input', previewPositionAmounts);
+  }
+  
+  // Обработчик кнопки автобаланса
+  if (autoBalanceBtn) {
+    autoBalanceBtn.addEventListener('click', async () => {
+      await calculateAutoBalance();
+    });
+  }
+  
+  // Обработчик Enter в поле общей суммы
+  if (autoBalanceTotalAmount) {
+    autoBalanceTotalAmount.addEventListener('keypress', async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        await calculateAutoBalance();
+      }
+    });
+  }
+  
   // Обработчик формы открытия позиции
   const openPositionForm = document.getElementById('openPositionForm');
   if (openPositionForm) {
@@ -2130,6 +2638,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const rangeInterval = parseInt(document.getElementById('positionRangeInterval').value);
       const tokenXAmountInput = document.getElementById('positionTokenXAmount').value;
       const tokenYAmountInput = document.getElementById('positionTokenYAmount').value;
+      
+      // Отладочный вывод перед валидацией
+      console.log('[DEBUG] Form submission - input values:', {
+        tokenXAmountInput,
+        tokenYAmountInput,
+        tokenXAmountInputParsed: parseFloat(tokenXAmountInput),
+        tokenYAmountInputParsed: parseFloat(tokenYAmountInput),
+      });
       
       // Валидация входных данных
       if (!strategy || !['balance', 'imbalance', 'oneSide'].includes(strategy)) {
@@ -2166,6 +2682,18 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const tokenXAmount = convertToSmallestUnits(tokenXAmountInput, currentPoolTokenX.decimals).toString();
       const tokenYAmount = convertToSmallestUnits(tokenYAmountInput || '0', currentPoolTokenY.decimals).toString();
+      
+      // Отладочный вывод после конвертации
+      console.log('[DEBUG] After conversion to smallest units:', {
+        tokenXAmountInput,
+        tokenYAmountInput,
+        tokenXDecimals: currentPoolTokenX.decimals,
+        tokenYDecimals: currentPoolTokenY.decimals,
+        tokenXAmount,
+        tokenYAmount,
+        tokenXAmountHuman: parseFloat(tokenXAmount) / Math.pow(10, currentPoolTokenX.decimals),
+        tokenYAmountHuman: parseFloat(tokenYAmount) / Math.pow(10, currentPoolTokenY.decimals),
+      });
       
       try {
         showPositionStatus('Генерация транзакции...', 'info');
@@ -2211,24 +2739,135 @@ document.addEventListener('DOMContentLoaded', () => {
         showPositionStatus('Подписание транзакции...', 'info');
         const signed = await provider.signTransaction(tx);
         
-        // 5) Отправляем через наш сервер
+        // 5) Отправляем через наш сервер с ожиданием подтверждения
         const signedBase64 = btoa(String.fromCharCode(...signed.serialize()));
-        const sendRes = await fetch('/api/tx/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ signedTxBase64: signedBase64 }),
-        });
+        showPositionStatus('Отправка транзакции...', 'info');
         
-        const sendData = await sendRes.json();
-        if (!sendRes.ok) {
-          throw new Error(sendData.error || 'Send failed');
+        // Создаем AbortController для таймаута
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 секунд таймаут
+        
+        try {
+          const sendRes = await fetch('/api/tx/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              signedTxBase64: signedBase64,
+              waitForConfirmation: true,
+            }),
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
+          
+          const sendData = await sendRes.json();
+          if (!sendRes.ok) {
+            // Если blockhash устарел, предлагаем пересоздать транзакцию
+            if (sendData.code === 'BLOCKHASH_EXPIRED' || sendData.expired || sendData.timeout) {
+              throw new Error(`${sendData.error || 'Транзакция истекла'}. ${sendData.hint || 'Попробуйте создать транзакцию заново.'}`);
+            }
+            throw new Error(sendData.error || 'Send failed');
+          }
+          
+          const sig = sendData.signature;
+          
+          // Проверяем, подтвердилась ли транзакция
+          if (sendData.confirmed === false) {
+            showPositionStatus(`⚠️ Транзакция отправлена, но не подтверждена. Signature: ${sig} | Проверьте в Solscan`, 'error');
+            return;
+          }
+          
+          if (sendData.err) {
+            throw new Error(`Транзакция отклонена: ${JSON.stringify(sendData.err)}`);
+          }
+          
+          // Проверяем, что позиция действительно создана (пробуем несколько раз с задержкой)
+          showPositionStatus('Проверка создания позиции...', 'info');
+          let positionExists = false;
+          for (let i = 0; i < 5; i++) {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Даем время на обработку
+            try {
+              const checkRes = await fetch(`/api/positions/${positionPublicKey}/verify?poolAddress=${encodeURIComponent(currentPoolAddress)}&userAddress=${encodeURIComponent(walletPublicKey)}`);
+              if (checkRes.ok) {
+                const checkData = await checkRes.json();
+                if (checkData.exists) {
+                  positionExists = true;
+                  break;
+                }
+              }
+            } catch (e) {
+              console.warn('Position verification attempt failed:', e);
+            }
+          }
+          
+          if (!positionExists) {
+            showPositionStatus(`⚠️ Транзакция подтверждена, но позиция еще не найдена. Signature: ${sig} | Position: ${positionPublicKey} | Проверьте позже в Solscan`, 'error');
+            // НЕ сохраняем позицию, если она не найдена на блокчейне
+            return;
+          }
+          
+          showPositionStatus(`✅ Позиция открыта и подтверждена! Signature: ${sig} | Position: ${positionPublicKey}`, 'success');
+          
+          // Сохраняем позицию в базу данных ТОЛЬКО после подтверждения существования
+          try {
+          // Используем уже загруженную информацию о токенах
+          let tokenXMint = '';
+          let tokenYMint = '';
+          
+          if (currentPoolTokenX && currentPoolTokenX.mint) {
+            tokenXMint = currentPoolTokenX.mint;
+          }
+          if (currentPoolTokenY && currentPoolTokenY.mint) {
+            tokenYMint = currentPoolTokenY.mint;
+          }
+          
+          // Отладочный вывод перед сохранением
+          console.log('[DEBUG] Saving position with amounts:', {
+            tokenXAmountInput: tokenXAmountInput,
+            tokenYAmountInput: tokenYAmountInput,
+            tokenXAmount: tokenXAmount,
+            tokenYAmount: tokenYAmount,
+            tokenXDecimals: currentPoolTokenX?.decimals,
+            tokenYDecimals: currentPoolTokenY?.decimals,
+          });
+          
+          // Сохраняем позицию
+          const saveRes = await fetch('/api/positions/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              positionAddress: positionPublicKey,
+              poolAddress: currentPoolAddress,
+              userAddress: walletPublicKey,
+              strategy,
+              rangeInterval,
+              tokenXAmount,
+              tokenYAmount,
+              tokenXMint,
+              tokenYMint,
+            }),
+          });
+          
+          if (saveRes.ok) {
+            console.log('Position saved successfully');
+            // Обновляем список позиций
+            await loadUserPositions();
+            // Обновляем статистику
+            await updateAdminStats();
+          } else {
+            console.warn('Failed to save position:', await saveRes.text());
+          }
+          } catch (saveError) {
+            console.error('Error saving position:', saveError);
+            // Не прерываем процесс, позиция уже открыта
+          }
+          
+          // Очищаем форму
+          openPositionForm.reset();
+        } catch (sendError) {
+          console.error('Error sending transaction:', sendError);
+          showPositionStatus('Ошибка отправки транзакции: ' + (sendError.message || 'Unknown'), 'error');
         }
-        
-        const sig = sendData.signature;
-        showPositionStatus(`Позиция открыта! Signature: ${sig} | Position: ${positionPublicKey}`, 'success');
-        
-        // Очищаем форму
-        openPositionForm.reset();
       } catch (err) {
         console.error('Open position error:', err);
         showPositionStatus('Ошибка открытия позиции: ' + (err.message || 'Unknown'), 'error');
@@ -3211,10 +3850,6 @@ async function loadPoolsConfigs() {
           </div>
           <div class="pool-config-details">
             <div class="pool-config-detail-item">
-              <span class="detail-label">Коридор:</span>
-              <span class="detail-value">+${config.priceCorridorPercent.upper}% / -${config.priceCorridorPercent.lower}%</span>
-            </div>
-            <div class="pool-config-detail-item">
               <span class="detail-label">Stop Loss:</span>
               <span class="detail-value">${config.stopLossPercent}%</span>
             </div>
@@ -3271,8 +3906,6 @@ function openPoolConfigModal(poolAddress, config) {
   
   // Заполняем форму
   document.getElementById('editPoolAddress').value = poolAddress;
-  document.getElementById('editPriceCorridorUpper').value = config.priceCorridorPercent.upper || 4;
-  document.getElementById('editPriceCorridorLower').value = config.priceCorridorPercent.lower || 4;
   document.getElementById('editStopLossPercent').value = config.stopLossPercent || -2;
   document.getElementById('editTakeProfitPercent').value = config.takeProfitPercent || 2;
   document.getElementById('editFeeCheckPercent').value = config.feeCheckPercent || 50;
@@ -3308,10 +3941,6 @@ async function savePoolConfigFromModal() {
   }
   
   const config = {
-    priceCorridorPercent: {
-      upper: parseFloat(document.getElementById('editPriceCorridorUpper').value),
-      lower: parseFloat(document.getElementById('editPriceCorridorLower').value),
-    },
     stopLossPercent: parseFloat(document.getElementById('editStopLossPercent').value),
     feeCheckPercent: parseFloat(document.getElementById('editFeeCheckPercent').value),
     takeProfitPercent: parseFloat(document.getElementById('editTakeProfitPercent').value),
@@ -3361,36 +3990,470 @@ function showPoolConfigModalStatus(message, type) {
   el.querySelector('.status-message').textContent = message;
 }
 
-// Загрузка позиций
-async function loadPositions() {
+// Загрузка позиций пользователя
+async function loadUserPositions() {
+  const positionsList = document.getElementById('positionsList');
+  if (!positionsList) return;
+  
+  positionsList.innerHTML = '<p style="color: rgba(255, 255, 255, 0.7);">Загрузка позиций...</p>';
+  
+  if (!walletPublicKey) {
+    positionsList.innerHTML = '<p style="color: rgba(255, 255, 255, 0.7);">Подключите кошелек для просмотра позиций</p>';
+    return;
+  }
+  
   try {
-    // TODO: Добавить API endpoint для получения позиций
-    // const response = await fetch('/api/positions');
-    // const positions = await response.json();
+    const response = await fetch(`/api/positions?userAddress=${encodeURIComponent(walletPublicKey)}`);
+    if (!response.ok) {
+      throw new Error('Failed to load positions');
+    }
     
-    const positionsList = document.getElementById('positionsList');
-    positionsList.innerHTML = '<p>Загрузка позиций...</p>';
+    const positions = await response.json();
     
-    // Пока заглушка
-    positionsList.innerHTML = '<p>Позиции будут отображаться здесь</p>';
+    if (positions.length === 0) {
+      positionsList.innerHTML = '<p style="color: rgba(255, 255, 255, 0.7);">У вас нет открытых позиций</p>';
+      return;
+    }
+    
+    // Загружаем расширенную информацию о позициях
+    const positionsWithDetails = await Promise.all(positions.map(async (position) => {
+      try {
+        const detailsResponse = await fetch(`/api/positions/${position.positionAddress}/details`);
+        if (detailsResponse.ok) {
+          return await detailsResponse.json();
+        }
+      } catch (error) {
+        console.error(`Error loading details for position ${position.positionAddress}:`, error);
+      }
+      return position;
+    }));
+
+    // Отображаем позиции
+    const positionsHTML = positionsWithDetails.map(position => {
+      const openedDate = new Date(position.openedAt).toLocaleString('ru-RU');
+      const statusColors = {
+        active: '#4CAF50',
+        closed: '#757575',
+        pending_close: '#FF9800',
+        stop_loss: '#F44336',
+        take_profit: '#4CAF50',
+      };
+      const statusText = {
+        active: 'Активна',
+        closed: 'Закрыта',
+        pending_close: 'Ожидает закрытия',
+        stop_loss: 'Stop Loss',
+        take_profit: 'Take Profit',
+      };
+
+      // Форматирование чисел
+      const formatCurrency = (value) => {
+        if (!value || isNaN(value)) return '$0.00';
+        if (Math.abs(value) >= 1000) {
+          return '$' + value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        return '$' + value.toFixed(2);
+      };
+
+      const formatPercent = (value) => {
+        if (!value || isNaN(value)) return '0.00%';
+        const sign = value >= 0 ? '+' : '';
+        return sign + value.toFixed(2) + '%';
+      };
+
+      // Цвета для P&L
+      const pnlColor = position.pnlUSD >= 0 ? '#4CAF50' : '#F44336';
+      const priceChangeColor = position.priceChangePercent >= 0 ? '#4CAF50' : '#F44336';
+      
+      return `
+        <div class="position-card" style="padding: 15px; margin-bottom: 15px; background: rgba(15, 15, 30, 0.6); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);">
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+            <div>
+              <div style="font-weight: 600; color: white; margin-bottom: 5px;">
+                Позиция: ${position.positionAddress.substring(0, 8)}...${position.positionAddress.substring(position.positionAddress.length - 6)}
+              </div>
+              <div style="font-size: 0.85em; color: rgba(255, 255, 255, 0.6);">
+                Пул: ${position.poolAddress.substring(0, 8)}...${position.poolAddress.substring(position.poolAddress.length - 6)}
+              </div>
+            </div>
+            <div style="padding: 4px 12px; border-radius: 6px; background: ${statusColors[position.status] || '#757575'}20; color: ${statusColors[position.status] || '#757575'}; font-size: 0.85em; font-weight: 600;">
+              ${statusText[position.status] || position.status}
+            </div>
+          </div>
+          
+          <!-- Основная стоимость позиции -->
+          <div style="margin-top: 15px; padding: 12px; background: rgba(102, 126, 234, 0.1); border-radius: 8px; border: 1px solid rgba(102, 126, 234, 0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div style="font-size: 0.85em; color: rgba(255, 255, 255, 0.7);">Текущая стоимость позиции</div>
+              <div style="font-size: 1.3em; font-weight: 700; color: white;">${formatCurrency(position.currentValueUSD || position.initialValueUSD || 0)}</div>
+            </div>
+            ${position.initialValueUSD ? `
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; color: rgba(255, 255, 255, 0.6);">
+                <span>Начальная стоимость:</span>
+                <span>${formatCurrency(position.initialValueUSD)}</span>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- P&L и ROI -->
+          ${(position.pnlUSD !== undefined || position.roiPercent !== undefined) ? `
+            <div style="margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+              ${position.pnlUSD !== undefined ? `
+                <div style="padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 6px;">
+                  <div style="font-size: 0.75em; color: rgba(255, 255, 255, 0.6); margin-bottom: 4px;">P&L</div>
+                  <div style="font-weight: 600; color: ${pnlColor}; font-size: 1.1em;">
+                    ${formatCurrency(position.pnlUSD)}
+                  </div>
+                  ${position.pnlPercent !== undefined ? `
+                    <div style="font-size: 0.75em; color: ${pnlColor}; margin-top: 2px;">
+                      ${formatPercent(position.pnlPercent)}
+                    </div>
+                  ` : ''}
+                </div>
+              ` : ''}
+              ${position.roiPercent !== undefined ? `
+                <div style="padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 6px;">
+                  <div style="font-size: 0.75em; color: rgba(255, 255, 255, 0.6); margin-bottom: 4px;">ROI</div>
+                  <div style="font-weight: 600; color: ${position.roiPercent >= 0 ? '#4CAF50' : '#F44336'}; font-size: 1.1em;">
+                    ${formatPercent(position.roiPercent)}
+                  </div>
+                </div>
+              ` : ''}
+              ${position.priceChangePercent !== undefined ? `
+                <div style="padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 6px;">
+                  <div style="font-size: 0.75em; color: rgba(255, 255, 255, 0.6); margin-bottom: 4px;">Изменение цены</div>
+                  <div style="font-weight: 600; color: ${priceChangeColor}; font-size: 1.1em;">
+                    ${formatPercent(position.priceChangePercent)}
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+
+          <!-- Детальная информация -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+            <div>
+              <div style="font-size: 0.8em; color: rgba(255, 255, 255, 0.6);">Token X</div>
+              <div style="color: white; font-weight: 600; font-size: 0.9em;">${(position.tokenXAmount || parseFloat(position.initialTokenXAmount || '0')).toLocaleString('ru-RU', { maximumFractionDigits: 6 })}</div>
+              ${position.tokenXPriceUSD ? `
+                <div style="font-size: 0.7em; color: rgba(255, 255, 255, 0.5); margin-top: 2px;">
+                  ${formatCurrency(position.tokenXPriceUSD)} за токен
+                </div>
+              ` : ''}
+            </div>
+            <div>
+              <div style="font-size: 0.8em; color: rgba(255, 255, 255, 0.6);">Token Y</div>
+              <div style="color: white; font-weight: 600; font-size: 0.9em;">${(position.tokenYAmount || parseFloat(position.initialTokenYAmount || '0')).toLocaleString('ru-RU', { maximumFractionDigits: 6 })}</div>
+              ${position.tokenYPriceUSD ? `
+                <div style="font-size: 0.7em; color: rgba(255, 255, 255, 0.5); margin-top: 2px;">
+                  ${formatCurrency(position.tokenYPriceUSD)} за токен
+                </div>
+              ` : ''}
+            </div>
+            <div>
+              <div style="font-size: 0.8em; color: rgba(255, 255, 255, 0.6);">Начальная цена</div>
+              <div style="color: white; font-weight: 600;">$${parseFloat(position.initialPrice || '0').toFixed(6)}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.8em; color: rgba(255, 255, 255, 0.6);">Текущая цена</div>
+              <div style="color: white; font-weight: 600;">$${parseFloat(position.currentPrice || position.initialPrice || '0').toFixed(6)}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.8em; color: rgba(255, 255, 255, 0.6);">Открыта</div>
+              <div style="color: white; font-size: 0.85em;">${openedDate}</div>
+              ${position.timeInPositionDays ? `
+                <div style="font-size: 0.7em; color: rgba(255, 255, 255, 0.5); margin-top: 2px;">
+                  ${position.timeInPositionDays.toFixed(1)} дн.
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          
+          ${(position.accumulatedFees > 0 || position.timeInPositionHours) ? `
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1); display: flex; justify-content: space-between; gap: 15px; flex-wrap: wrap;">
+              ${position.accumulatedFees > 0 ? `
+                <div>
+                  <div style="font-size: 0.8em; color: rgba(255, 255, 255, 0.6);">Накопленные комиссии</div>
+                  <div style="color: #4CAF50; font-weight: 600;">${formatCurrency(position.accumulatedFees)}</div>
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+          
+          <!-- История Mirror Swaps -->
+          ${position.hedgeSwapsHistory && position.hedgeSwapsHistory.length > 0 ? `
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="font-weight: 600; color: white; font-size: 0.95em;">
+                  🔄 Mirror Swaps (${position.hedgeSwapsHistory.length})
+                </div>
+                <button 
+                  class="toggle-hedge-history-btn" 
+                  data-position-address="${position.positionAddress}"
+                  style="background: rgba(102, 126, 234, 0.2); color: #667eea; border: 1px solid rgba(102, 126, 234, 0.4); border-radius: 6px; padding: 6px 12px; font-size: 0.85em; cursor: pointer; transition: all 0.2s;"
+                  onmouseover="this.style.background='rgba(102, 126, 234, 0.3)'"
+                  onmouseout="this.style.background='rgba(102, 126, 234, 0.2)'"
+                >
+                  Показать
+                </button>
+              </div>
+              <div 
+                class="hedge-history-container" 
+                data-position-address="${position.positionAddress}"
+                style="display: none; max-height: 300px; overflow-y: auto; background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 10px;"
+              >
+                ${position.hedgeSwapsHistory.slice().reverse().slice(0, 10).map(swap => {
+                  const swapDate = new Date(swap.timestamp).toLocaleString('ru-RU');
+                  const directionColor = swap.direction === 'buy' ? '#4CAF50' : '#F44336';
+                  const directionIcon = swap.direction === 'buy' ? '⬆️' : '⬇️';
+                  const priceChangeColor = swap.priceChangePercent >= 0 ? '#4CAF50' : '#F44336';
+                  return `
+                    <div style="padding: 10px; margin-bottom: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; border-left: 3px solid ${directionColor};">
+                      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span style="font-size: 1.2em;">${directionIcon}</span>
+                          <span style="font-weight: 600; color: ${directionColor}; text-transform: uppercase;">${swap.direction === 'buy' ? 'Покупка' : 'Продажа'}</span>
+                          <span style="color: white; font-weight: 600;">${parseFloat(swap.amount).toFixed(6)}</span>
+                        </div>
+                        <div style="font-size: 0.75em; color: rgba(255, 255, 255, 0.5);">${swapDate}</div>
+                      </div>
+                      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.8em;">
+                        <div>
+                          <span style="color: rgba(255, 255, 255, 0.6);">Цена:</span>
+                          <span style="color: white; margin-left: 4px;">$${parseFloat(swap.price).toFixed(6)}</span>
+                        </div>
+                        <div>
+                          <span style="color: rgba(255, 255, 255, 0.6);">Изменение:</span>
+                          <span style="color: ${priceChangeColor}; margin-left: 4px;">${swap.priceChangePercent >= 0 ? '+' : ''}${swap.priceChangePercent.toFixed(2)}%</span>
+                        </div>
+                        <div style="grid-column: 1 / -1;">
+                          <span style="color: rgba(255, 255, 255, 0.6);">Транзакция:</span>
+                          <a href="https://solscan.io/tx/${swap.signature}" target="_blank" style="color: #667eea; text-decoration: none; margin-left: 4px; word-break: break-all;">
+                            ${swap.signature.substring(0, 16)}...
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+                ${position.hedgeSwapsHistory.length > 10 ? `
+                  <div style="text-align: center; padding: 8px; color: rgba(255, 255, 255, 0.5); font-size: 0.85em;">
+                    Показаны последние 10 из ${position.hedgeSwapsHistory.length} swaps
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          ` : ''}
+          
+          <!-- Кнопка закрытия позиции -->
+          ${position.status === 'active' ? `
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+              <button 
+                class="close-position-btn" 
+                data-position-address="${position.positionAddress}"
+                data-pool-address="${position.poolAddress}"
+                style="width: 100%; padding: 12px; background: linear-gradient(135deg, #F44336 0%, #D32F2F 100%); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95em; transition: all 0.3s ease;"
+                onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.02)'"
+                onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'"
+              >
+                🔒 Закрыть позицию
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+    
+    positionsList.innerHTML = positionsHTML;
+    
+    // Обновляем статистику после загрузки позиций
+    await updateAdminStats();
+    
+    // Добавляем обработчики для кнопок закрытия позиций
+    positionsList.querySelectorAll('.close-position-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const positionAddress = btn.getAttribute('data-position-address');
+        const poolAddress = btn.getAttribute('data-pool-address');
+        if (positionAddress && poolAddress) {
+          await closePosition(positionAddress, poolAddress);
+        }
+      });
+    });
+    
+    // Добавляем обработчики для кнопок показа/скрытия истории hedge swaps
+    positionsList.querySelectorAll('.toggle-hedge-history-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const positionAddress = btn.getAttribute('data-position-address');
+        const historyContainer = positionsList.querySelector(`.hedge-history-container[data-position-address="${positionAddress}"]`);
+        if (historyContainer) {
+          const isVisible = historyContainer.style.display !== 'none';
+          historyContainer.style.display = isVisible ? 'none' : 'block';
+          btn.textContent = isVisible ? 'Показать' : 'Скрыть';
+        }
+      });
+    });
   } catch (error) {
     console.error('Error loading positions:', error);
+    positionsList.innerHTML = '<p style="color: #F44336;">Ошибка загрузки позиций: ' + error.message + '</p>';
   }
+}
+
+// Закрытие позиции
+async function closePosition(positionAddress, poolAddress) {
+  if (!walletPublicKey) {
+    alert('Подключите кошелек для закрытия позиции');
+    return;
+  }
+  
+  if (!confirm(`Вы уверены, что хотите закрыть позицию ${positionAddress.substring(0, 8)}...${positionAddress.substring(positionAddress.length - 6)}?`)) {
+    return;
+  }
+  
+  try {
+    // Показываем статус загрузки
+    const positionsList = document.getElementById('positionsList');
+    if (positionsList) {
+      const statusEl = document.createElement('div');
+      statusEl.id = 'closePositionStatus';
+      statusEl.style.cssText = 'padding: 15px; margin-bottom: 15px; background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px; color: #ffc107;';
+      statusEl.textContent = 'Закрытие позиции...';
+      positionsList.insertBefore(statusEl, positionsList.firstChild);
+    }
+    
+    // Запрашиваем транзакцию закрытия позиции
+    const res = await fetch('/api/meteora/close-position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        poolAddress,
+        positionAddress,
+        userPublicKey: walletPublicKey,
+      }),
+    });
+    
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to create close position transaction');
+    }
+    
+    const { transaction: txBase64 } = data;
+    
+    // Десериализуем транзакцию
+    const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
+    const tx = solanaWeb3.VersionedTransaction.deserialize(txBytes);
+    
+    // Подписываем пользовательским кошельком через Phantom
+    const provider = getPhantomProvider();
+    if (!provider) {
+      throw new Error('Phantom не найден');
+    }
+    
+    const signed = await provider.signTransaction(tx);
+    
+    // Отправляем через наш сервер
+    const signedBase64 = btoa(String.fromCharCode(...signed.serialize()));
+    const sendRes = await fetch('/api/tx/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signedTxBase64: signedBase64 }),
+    });
+    
+    const sendData = await sendRes.json();
+    if (!sendRes.ok) {
+      throw new Error(sendData.error || 'Send failed');
+    }
+    
+    const sig = sendData.signature;
+    
+    // Обновляем статус позиции в базе данных
+    try {
+      await fetch(`/api/positions/${positionAddress}/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (updateError) {
+      console.warn('Failed to update position status:', updateError);
+      // Не прерываем процесс, позиция уже закрыта в блокчейне
+    }
+    
+    // Обновляем статус
+    const statusEl = document.getElementById('closePositionStatus');
+    if (statusEl) {
+      statusEl.style.cssText = 'padding: 15px; margin-bottom: 15px; background: rgba(76, 175, 80, 0.1); border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 8px; color: #4CAF50;';
+      statusEl.textContent = `✅ Позиция закрыта! Signature: ${sig}`;
+      setTimeout(() => {
+        statusEl.remove();
+      }, 10000); // Увеличиваем время до 10 секунд
+    }
+    
+    // Показываем заметное уведомление об успешном закрытии
+    showSuccessNotification(
+      `✅ Позиция успешно закрыта!`,
+      `Позиция ${positionAddress.substring(0, 8)}...${positionAddress.substring(positionAddress.length - 6)} была закрыта.`,
+      sig
+    );
+    
+    // Обновляем список позиций
+    await loadUserPositions();
+    // Обновляем статистику
+    await updateAdminStats();
+    
+  } catch (error) {
+    console.error('Error closing position:', error);
+    const statusEl = document.getElementById('closePositionStatus');
+    if (statusEl) {
+      statusEl.style.cssText = 'padding: 15px; margin-bottom: 15px; background: rgba(244, 67, 54, 0.1); border: 1px solid rgba(244, 67, 54, 0.3); border-radius: 8px; color: #F44336;';
+      statusEl.textContent = `❌ Ошибка закрытия позиции: ${error.message}`;
+    } else {
+      alert(`Ошибка закрытия позиции: ${error.message}`);
+    }
+  }
+}
+
+// Загрузка позиций (для админ панели)
+async function loadPositions() {
+  // Используем ту же функцию для загрузки позиций пользователя
+  await loadUserPositions();
 }
 
 // Обновление статистики
 async function updateAdminStats() {
   try {
-    // TODO: Добавить API endpoint для статистики
-    // const response = await fetch('/api/admin/stats');
-    // const stats = await response.json();
+    if (!walletPublicKey) {
+      // Если кошелек не подключен, показываем нули
+      document.getElementById('activePositionsCount').textContent = '0';
+      document.getElementById('closedPositionsCount').textContent = '0';
+      document.getElementById('totalFees').textContent = '$0.00';
+      return;
+    }
     
-    // Пока заглушка
+    const response = await fetch(`/api/positions/stats?userAddress=${encodeURIComponent(walletPublicKey)}`);
+    if (!response.ok) {
+      throw new Error('Failed to load stats');
+    }
+    
+    const stats = await response.json();
+    
+    // Обновляем статистику
+    document.getElementById('activePositionsCount').textContent = String(stats.activePositionsCount || 0);
+    document.getElementById('closedPositionsCount').textContent = String(stats.closedPositionsCount || 0);
+    
+    // Форматируем комиссии
+    const formatCurrency = (value) => {
+      if (!value || isNaN(value) || value === 0) return '$0.00';
+      if (Math.abs(value) >= 1000) {
+        return '$' + value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      return '$' + value.toFixed(2);
+    };
+    
+    document.getElementById('totalFees').textContent = formatCurrency(stats.totalFees || 0);
+  } catch (error) {
+    console.error('Error updating admin stats:', error);
+    // При ошибке показываем нули
     document.getElementById('activePositionsCount').textContent = '0';
     document.getElementById('closedPositionsCount').textContent = '0';
     document.getElementById('totalFees').textContent = '$0.00';
-  } catch (error) {
-    console.error('Error updating admin stats:', error);
   }
 }
 
@@ -3464,6 +4527,10 @@ async function loadWalletSettings() {
         phantomWallet = provider;
         updateWalletUI();
         await updateWalletBalance();
+        // Загружаем позиции пользователя
+        await loadUserPositions();
+        // Обновляем статистику
+        await updateAdminStats();
       }
     }
   } catch (error) {

@@ -1,5 +1,6 @@
 import type { PositionInfo, FeeVsLossCalculation } from './types.js';
 import { PriceMonitor } from './priceMonitor.js';
+import type { Connection } from '@solana/web3.js';
 
 /**
  * Модуль расчета стратегии
@@ -47,11 +48,20 @@ export class StrategyCalculator {
     // Рассчитываем цену безубыточности
     const breakEvenPrice = await this.calculateBreakEvenPrice(position, accumulatedFees, positionBinData);
 
+    const finalEstimatedLoss = Math.max(0, estimatedLoss); // Потери не могут быть отрицательными
+    
+    // Логируем для отладки
+    if (finalEstimatedLoss === 0 && accumulatedFees > 0) {
+      console.log(`[FeeVsLoss] Position ${position.positionAddress}: No losses detected (currentValue: $${currentValue.toFixed(2)}, slValue: $${slValue.toFixed(2)}, currentPrice: $${currentPrice.toFixed(6)}, stopLossPrice: $${stopLossPrice.toFixed(6)}), keeping position open`);
+    }
+    
     return {
       accumulatedFees,
-      estimatedLoss: Math.max(0, estimatedLoss), // Потери не могут быть отрицательными
+      estimatedLoss: finalEstimatedLoss,
       netResult,
-      shouldClose: netResult >= 0, // Закрываем, если fee перекрывают потери
+      // Закрываем только если есть реальные потери И комиссии их перекрывают
+      // Не закрываем позицию, если потерь нет (estimatedLoss = 0)
+      shouldClose: finalEstimatedLoss > 0 && netResult >= 0,
       breakEvenPrice,
     };
   }
@@ -65,6 +75,9 @@ export class StrategyCalculator {
     price: number,
     positionBinData?: Array<{ binId: number; amountX: any; amountY: any }>,
   ): Promise<number> {
+    const { Connection } = await import('@solana/web3.js');
+    const { fromSmallestUnitsAuto } = await import('../utils/tokenUtils.js');
+    
     // Если есть реальные данные о распределении по bins, используем их
     if (positionBinData && positionBinData.length > 0) {
       let totalX = 0;
@@ -83,17 +96,65 @@ export class StrategyCalculator {
         totalY += yAmount;
       }
       
-      // Рассчитываем стоимость: X токены * цена + Y токены
-      // Нужно учесть decimals токенов, но для упрощения используем как есть
-      const tokenXValue = totalX * price;
-      const tokenYValue = totalY;
-      
-      return tokenXValue + tokenYValue;
+      // Если bins пустые (totalX = 0 и totalY = 0), используем fallback на initialTokenXAmount
+      // Это может происходить если позиция только что создана или getPositionBinData вернул неправильные данные
+      if (totalX === 0 && totalY === 0) {
+        console.warn(`[BOT] [EstimateValue] Position ${position.positionAddress.substring(0, 8)}... has empty bins, using fallback on initialTokenXAmount`);
+        // Переходим к fallback ниже
+      } else {
+        // Конвертируем из минимальных единиц в human-readable с учетом decimals
+        // Получаем connection из priceMonitor
+        const connection = (this.priceMonitor as any).connection;
+        const tokenXHuman = await fromSmallestUnitsAuto(connection, totalX.toString(), position.tokenXMint);
+        const tokenYHuman = await fromSmallestUnitsAuto(connection, totalY.toString(), position.tokenYMint);
+        
+        // Рассчитываем стоимость: X токены * цена + Y токены (в USD, т.к. Token Y обычно стейблкоин)
+        const tokenXValue = tokenXHuman * price;
+        const tokenYValue = tokenYHuman;
+        
+        console.log(`[BOT] [EstimateValue] Position value from binData:`, {
+          totalXRaw: totalX.toString(),
+          totalYRaw: totalY.toString(),
+          tokenXHuman: tokenXHuman.toFixed(8),
+          tokenYHuman: tokenYHuman.toFixed(8),
+          price: price.toFixed(2),
+          tokenXValue: tokenXValue.toFixed(2),
+          tokenYValue: tokenYValue.toFixed(2),
+          totalValue: (tokenXValue + tokenYValue).toFixed(2),
+        });
+        
+        return tokenXValue + tokenYValue;
+      }
     }
     
-    // Fallback: упрощенная модель
-    const tokenXValue = parseFloat(position.initialTokenXAmount) * price;
-    const tokenYValue = parseFloat(position.initialTokenYAmount);
+    // Fallback: используем начальные суммы из позиции (они уже в минимальных единицах)
+    // ВАЖНО: initialTokenXAmount и initialTokenYAmount хранятся в минимальных единицах
+    // Конвертируем в human-readable с учетом decimals
+    const connection = (this.priceMonitor as any).connection;
+    const tokenXHuman = await fromSmallestUnitsAuto(
+      connection,
+      position.initialTokenXAmount,
+      position.tokenXMint,
+    );
+    const tokenYHuman = await fromSmallestUnitsAuto(
+      connection,
+      position.initialTokenYAmount,
+      position.tokenYMint,
+    );
+    
+    const tokenXValue = tokenXHuman * price;
+    const tokenYValue = tokenYHuman; // Token Y обычно стейблкоин (1 USDC = $1)
+    
+    console.log(`[BOT] [EstimateValue] Position value from initial amounts:`, {
+      initialXRaw: position.initialTokenXAmount,
+      initialYRaw: position.initialTokenYAmount,
+      tokenXHuman: tokenXHuman.toFixed(8),
+      tokenYHuman: tokenYHuman.toFixed(8),
+      price: price.toFixed(2),
+      tokenXValue: tokenXValue.toFixed(2),
+      tokenYValue: tokenYValue.toFixed(2),
+      totalValue: (tokenXValue + tokenYValue).toFixed(2),
+    });
     
     return tokenXValue + tokenYValue;
   }
@@ -151,26 +212,118 @@ export class StrategyCalculator {
   
   /**
    * Получить реальные накопленные комиссии из позиции через SDK
-   * TODO: Реализовать получение реальных данных через getClaimableSwapFees
+   * Использует getClaimableSwapFees для получения реальных комиссий
    */
   async getRealAccumulatedFees(
-    connection: any,
+    connection: Connection,
     position: PositionInfo,
+    currentPrice?: number,
   ): Promise<number> {
-    // TODO: Использовать getClaimableSwapFees из meteora.ts
-    // Пока возвращаем 0, нужно реализовать конвертацию в USD
-    return 0;
+    try {
+      const { getClaimableSwapFees } = await import('../dex/meteora.js');
+      const { fromSmallestUnitsAuto } = await import('../utils/tokenUtils.js');
+      const { PublicKey } = await import('@solana/web3.js');
+      
+      // Получаем реальные комиссии из позиции
+      const claimableFees = await getClaimableSwapFees(
+        connection,
+        position.poolAddress,
+        position.positionAddress,
+        new PublicKey(position.userAddress),
+      );
+      
+      // Логируем для отладки
+      console.log(`[BOT] [Fees] Claimable fees for position ${position.positionAddress.substring(0, 8)}...:`, {
+        tokenX: claimableFees.tokenX.toString(),
+        tokenY: claimableFees.tokenY.toString(),
+        tokenXMint: position.tokenXMint.substring(0, 8) + '...',
+        tokenYMint: position.tokenYMint.substring(0, 8) + '...',
+      });
+      
+      // Конвертируем комиссии в human-readable формат
+      const feeXAmount = await fromSmallestUnitsAuto(
+        connection,
+        claimableFees.tokenX.toString(),
+        position.tokenXMint,
+      );
+      const feeYAmount = await fromSmallestUnitsAuto(
+        connection,
+        claimableFees.tokenY.toString(),
+        position.tokenYMint,
+      );
+      
+      console.log(`[BOT] [Fees] Converted fees:`, {
+        feeXAmount: feeXAmount.toFixed(8),
+        feeYAmount: feeYAmount.toFixed(8),
+      });
+      
+      // Получаем текущую цену для конвертации в USD
+      // Если цена не передана, получаем её из priceMonitor
+      let price = currentPrice;
+      if (!price) {
+        price = await this.priceMonitor.getPoolPrice(position.poolAddress);
+      }
+      
+      // Конвертируем комиссии в USD
+      // Token X * цена + Token Y (предполагаем, что Token Y - стейблкоин в USD)
+      // Для стейблкоинов (USDC/USDT) 1 токен = 1 USD
+      const SOL_MINT = 'So11111111111111111111111111111111111111112';
+      const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+      const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+      
+      let feeXUSD = 0;
+      let feeYUSD = 0;
+      
+      // Token X: если это SOL, умножаем на цену, иначе считаем что это уже в USD
+      if (position.tokenXMint === SOL_MINT) {
+        feeXUSD = feeXAmount * price;
+      } else if (position.tokenXMint === USDC_MINT || position.tokenXMint === USDT_MINT) {
+        feeXUSD = feeXAmount; // Стейблкоины: 1 токен = 1 USD
+      } else {
+        // Для других токенов используем цену пула (цена Token X в USD)
+        feeXUSD = feeXAmount * price;
+      }
+      
+      // Token Y: обычно стейблкоин, но проверяем
+      if (position.tokenYMint === SOL_MINT) {
+        feeYUSD = feeYAmount * price;
+      } else if (position.tokenYMint === USDC_MINT || position.tokenYMint === USDT_MINT) {
+        feeYUSD = feeYAmount; // Стейблкоины: 1 токен = 1 USD
+      } else {
+        // Для других токенов считаем что это quote токен (обычно стейблкоин)
+        feeYUSD = feeYAmount;
+      }
+      
+      const totalFeesUSD = feeXUSD + feeYUSD;
+      
+      console.log(`[BOT] [Fees] Total fees in USD:`, {
+        feeXUSD: feeXUSD.toFixed(6),
+        feeYUSD: feeYUSD.toFixed(6),
+        totalFeesUSD: totalFeesUSD.toFixed(6),
+        currentPrice: price.toFixed(6),
+      });
+      
+      return Math.max(0, totalFeesUSD);
+    } catch (error) {
+      console.warn(`[BOT] ⚠️ Failed to get real accumulated fees for position ${position.positionAddress.substring(0, 8)}...:`, error);
+      // При ошибке возвращаем 0 вместо теоретического расчета
+      return 0;
+    }
   }
 
   /**
    * Рассчитать hedge amount для Mirror Swapping стратегии
    * Формула из презентации: h = 0.5 · (P₀ − P)/P₀
    * 
+   * ВАЖНО: Эта формула рассчитывает полное хеджирование от начальной цены.
+   * Для инкрементального хеджирования нужно учитывать уже выполненные hedge.
+   * 
    * @param position - Информация о позиции
    * @param currentPrice - Текущая цена
-   * @param initialPrice - Начальная цена
-   * @param hedgePercent - Процент позиции для хеджирования
+   * @param initialPrice - Начальная цена (или последняя цена hedge для инкрементального расчета)
+   * @param hedgePercent - Процент позиции для хеджирования (применяется к коэффициенту 0.5)
    * @param positionBinData - Реальное распределение токенов по bins (опционально)
+   * @param lastHedgePrice - Последняя цена, при которой выполнялся hedge (для инкрементального расчета)
    */
   async calculateHedgeAmount(
     position: PositionInfo,
@@ -178,26 +331,61 @@ export class StrategyCalculator {
     initialPrice: number,
     hedgePercent: number,
     positionBinData?: Array<{ binId: number; amountX: any; amountY: any }>,
-  ): Promise<{ amount: string; direction: 'buy' | 'sell' }> {
+    lastHedgePrice?: number,
+  ): Promise<{ amount: string; direction: 'buy' | 'sell'; hedgeRatio: number }> {
+    // Определяем базовую цену для расчета
+    // Если указана lastHedgePrice, используем инкрементальный расчет
+    // Иначе используем полный расчет от initialPrice
+    const basePrice = lastHedgePrice || initialPrice;
+    
     // Формула из презентации: h = 0.5 · (P₀ − P)/P₀
-    const priceChange = (initialPrice - currentPrice) / initialPrice;
-    const hedgeRatio = 0.5 * priceChange;
+    // Применяем hedgePercent к коэффициенту 0.5
+    // Если hedgePercent = 50%, то h = 0.5 * 0.5 * (P₀ − P)/P₀ = 0.25 * (P₀ − P)/P₀
+    const priceChange = (basePrice - currentPrice) / basePrice;
+    const hedgeRatio = (hedgePercent / 100) * 0.5 * priceChange;
     
-    // Применяем hedgePercent
-    const adjustedHedgeRatio = hedgeRatio * (hedgePercent / 100);
-    
-    // Рассчитываем количество токена для хеджирования
+    // Рассчитываем стоимость позиции при текущей цене
     const positionValue = await this.estimatePositionValue(position, currentPrice, positionBinData);
-    const hedgeValue = positionValue * Math.abs(adjustedHedgeRatio);
-    const hedgeAmount = hedgeValue / currentPrice;
     
-    // Определяем направление: если цена упала (priceChange > 0), нужно покупать (hedge)
-    // Если цена выросла (priceChange < 0), нужно продавать
+    // Стоимость для хеджирования (в USD)
+    const hedgeValueUSD = positionValue * Math.abs(hedgeRatio);
+    
+    // MIRROR SWAPPING: Делаем ОБРАТНОЕ тому, что делает LP
+    // 📉 Когда цена ПАДАЕТ (priceChange > 0, т.е. P < P₀):
+    //    - LP автоматически ПРОДАЕТ Token X (SOL) → накапливает Token Y (USDC)
+    //    - Мы в кошельке должны КУПИТЬ Token X (SOL) → direction = 'buy'
+    // 
+    // 📈 Когда цена РАСТЕТ (priceChange < 0, т.е. P > P₀):
+    //    - LP автоматически ПОКУПАЕТ Token X (SOL) → тратит Token Y (USDC)
+    //    - Мы в кошельке должны ПРОДАТЬ Token X (SOL) → direction = 'sell'
     const direction = priceChange > 0 ? 'buy' : 'sell';
+    
+    // Рассчитываем количество токена для swap
+    // Для 'sell': продаем Token X, количество = hedgeValueUSD / currentPrice
+    // Для 'buy': покупаем Token X, продаем Token Y, количество Token Y = hedgeValueUSD
+    // ВАЖНО: Предполагаем, что Token Y - стейблкоин (USDC/USDT), где 1 USD = 1 токен
+    // Если Token Y не стейблкоин, нужно делить на цену Token Y в USD
+    const hedgeAmount = direction === 'sell' 
+      ? hedgeValueUSD / currentPrice  // Количество Token X для продажи
+      : hedgeValueUSD;                 // Количество Token Y для продажи (предполагаем стейблкоин)
+    
+    console.log(`[BOT] [HedgeCalculation] Calculated hedge for position ${position.positionAddress.substring(0, 8)}...:`, {
+      basePrice: basePrice.toFixed(6),
+      currentPrice: currentPrice.toFixed(6),
+      priceChange: (priceChange * 100).toFixed(3) + '%',
+      hedgePercent: hedgePercent + '%',
+      hedgeRatio: (hedgeRatio * 100).toFixed(3) + '%',
+      positionValue: positionValue.toFixed(2),
+      hedgeValueUSD: hedgeValueUSD.toFixed(6), // Исправлено: показываем больше знаков для маленьких значений
+      hedgeValueUSDRaw: hedgeValueUSD, // Добавляем raw значение для отладки
+      direction: direction,
+      hedgeAmount: hedgeAmount.toFixed(8),
+    });
     
     return {
       amount: hedgeAmount.toString(),
       direction,
+      hedgeRatio, // Возвращаем для логирования
     };
   }
   

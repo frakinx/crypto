@@ -172,6 +172,30 @@
             <input type="number" id="swapAmount" step="0.000000001" placeholder="Например: 1 для 1 SOL" />
             <small id="swapAmountHint">Введите количество токенов (например, 1 для 1 SOL, 100 для 100 USDC)</small>
           </div>
+          
+          <!-- Блок отображения результата свапа в реальном времени -->
+          <div id="swapPreviewResult" style="display: none; margin-top: 15px; padding: 15px; background: rgba(102, 126, 234, 0.1); border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 8px;">
+            <div style="color: #1a1a2e; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+              <span>💱</span>
+              <span>Результат свапа</span>
+            </div>
+            <div style="color: #333; font-size: 0.95em;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="color: #555; font-weight: 500;">Вы отдаете:</span>
+                <span id="swapPreviewInput" style="color: #1a1a2e; font-weight: 600;">-</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="color: #555; font-weight: 500;">Вы получите:</span>
+                <span id="swapPreviewOutput" style="color: #2e7d32; font-weight: 600; font-size: 1.1em;">-</span>
+              </div>
+              <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, 0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="color: #666; font-size: 0.85em;">Курс обмена:</span>
+                  <span id="swapPreviewRate" style="color: #333; font-size: 0.85em; font-weight: 500;">-</span>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="form-group">
             <label for="swapSlippage">Slippage (bps):</label>
             <input type="number" id="swapSlippage" placeholder="100 = 1%" value="100" />
@@ -424,14 +448,6 @@
               <input type="text" id="editPoolAddress" readonly style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white; font-family: monospace;" />
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
-              <div class="form-group">
-                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (верхний %):</label>
-                <input type="number" id="editPriceCorridorUpper" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-              </div>
-              <div class="form-group">
-                <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (нижний %):</label>
-                <input type="number" id="editPriceCorridorLower" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-              </div>
               <div class="form-group">
                 <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Stop Loss (%):</label>
                 <input type="number" id="editStopLossPercent" step="0.1" min="-10" max="0" value="-2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
@@ -710,14 +726,6 @@
               </h4>
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                 <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (верхний %):</label>
-                  <input type="number" id="poolPriceCorridorUpper" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Коридор цен (нижний %):</label>
-                  <input type="number" id="poolPriceCorridorLower" step="0.1" min="0" max="100" value="4" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-                <div class="form-group">
                   <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Stop Loss (%):</label>
                   <input type="number" id="poolStopLossPercent" step="0.1" min="-10" max="0" value="-2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
                 </div>
@@ -772,6 +780,15 @@
                 <label for="positionRangeInterval" style="color: white;">Диапазон (количество bins с каждой стороны):</label>
                 <input type="number" id="positionRangeInterval" value="10" min="1" max="100" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
                 <small style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Количество bins с каждой стороны от активного bin</small>
+                <div id="positionPriceRange" style="margin-top: 10px; padding: 10px; background: rgba(102, 126, 234, 0.1); border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 6px; display: none;">
+                  <div style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; margin-bottom: 5px;"><strong>Диапазон цен позиции:</strong></div>
+                  <div style="color: rgba(255, 255, 255, 0.8); font-size: 0.85em;">
+                    <div>Нижняя граница: <span id="positionLowerBound" style="color: #ff6b6b; font-weight: bold;">-</span></div>
+                    <div>Текущая цена: <span id="positionCurrentPrice" style="color: #4ecdc4; font-weight: bold;">-</span></div>
+                    <div>Верхняя граница: <span id="positionUpperBound" style="color: #95e1d3; font-weight: bold;">-</span></div>
+                    <div style="margin-top: 5px; color: rgba(255, 255, 255, 0.6); font-size: 0.8em;">Ширина диапазона: <span id="positionRangeWidth" style="color: rgba(255, 255, 255, 0.8);">-</span></div>
+                  </div>
+                </div>
               </div>
               <div class="form-group">
                 <label for="positionTokenXAmount" style="color: white;">Количество Token X:</label>
@@ -783,6 +800,64 @@
                 <input type="number" id="positionTokenYAmount" placeholder="0" step="0.000000001" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
                 <small id="positionTokenYHint" style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Введите количество в единицах токена (например, 100 для 100 USDC)</small>
               </div>
+              
+              <!-- Кнопка автобаланса -->
+              <div class="form-group" style="margin-top: 15px;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                  <input type="number" id="autoBalanceTotalAmount" placeholder="Общая сумма (USD)" step="0.01" min="0" style="flex: 1; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
+                  <button type="button" id="autoBalanceBtn" style="padding: 10px 20px; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; white-space: nowrap;">
+                    ⚖️ Автобаланс
+                  </button>
+                </div>
+                <small style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em; display: block; margin-top: 5px;">
+                  Введите общую сумму в USD для автоматического расчета баланса 50/50
+                </small>
+              </div>
+              
+              <!-- Предупреждение о реальных суммах для стратегии Balance -->
+              <div id="positionAmountPreview" style="display: none; margin-top: 15px; padding: 15px; background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px;">
+                <div style="color: #ffc107; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                  <span>⚠️</span>
+                  <span>Внимание: Реальные суммы для стратегии Balance (50/50)</span>
+                </div>
+                <div style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; line-height: 1.6;">
+                  <p style="margin: 5px 0;">При стратегии <strong>Balance (50/50)</strong> система автоматически пересчитывает количество токенов для обеспечения баланса 50/50. Реально списанные суммы могут отличаться от указанных вами.</p>
+                  <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 193, 7, 0.2);">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                      <div>
+                        <span style="color: rgba(255, 255, 255, 0.7);">Указано Token X:</span>
+                        <span id="previewInputX" style="color: white; font-weight: 600; margin-left: 5px;">-</span>
+                      </div>
+                      <div>
+                        <span style="color: rgba(255, 255, 255, 0.7);">Для позиции Token X:</span>
+                        <span id="previewActualX" style="color: #ffc107; font-weight: 600; margin-left: 5px;">-</span>
+                      </div>
+                      <div>
+                        <span style="color: rgba(255, 255, 255, 0.7);">Указано Token Y:</span>
+                        <span id="previewInputY" style="color: white; font-weight: 600; margin-left: 5px;">-</span>
+                      </div>
+                      <div>
+                        <span style="color: rgba(255, 255, 255, 0.7);">Для позиции Token Y:</span>
+                        <span id="previewActualY" style="color: #ffc107; font-weight: 600; margin-left: 5px;">-</span>
+                      </div>
+                    </div>
+                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 193, 7, 0.15);">
+                      <p style="margin: 5px 0; color: rgba(255, 255, 255, 0.8); font-size: 0.85em;">
+                        <strong>⚠️ Важно:</strong> В Phantom вы увидите дополнительные расходы:
+                      </p>
+                      <ul style="margin: 8px 0 0 0; padding-left: 20px; color: rgba(255, 255, 255, 0.7); font-size: 0.85em; line-height: 1.8;">
+                        <li>Суммы для позиции (показаны выше)</li>
+                        <li>Rent для аккаунта позиции (~0.05 SOL, возвращается при закрытии)</li>
+                        <li>Комиссии за транзакцию (~0.00001 SOL)</li>
+                      </ul>
+                      <p style="margin: 8px 0 0 0; color: rgba(255, 255, 255, 0.8); font-size: 0.85em;">
+                        <strong>Итого в Phantom будет больше SOL</strong>, чем показано в preview, из-за rent и комиссий.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
               <div class="form-actions" style="margin-top: 15px;">
                 <button type="submit" id="openPositionBtn" class="save-btn" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;">
                   🚀 Открыть позицию

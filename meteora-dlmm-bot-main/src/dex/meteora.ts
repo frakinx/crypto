@@ -27,6 +27,7 @@ export type OpenPositionParams = {
   rangeInterval: number; // количество bins с каждой стороны
   tokenXAmount: string; // в минимальных единицах (lamports)
   tokenYAmount: string; // в минимальных единицах (lamports)
+  positionKeypair?: Keypair; // Опциональный positionKeypair для использования при retry (чтобы адрес позиции не менялся)
 };
 
 export async function fetchDlmmPairs(): Promise<DlmmPair[]> {
@@ -55,6 +56,92 @@ export async function fetchDlmmPairs(): Promise<DlmmPair[]> {
 export async function createDlmmPool(connection: Connection, poolAddress: string) {
   const pub = new PublicKey(poolAddress);
   return DLMM.create(connection, pub);
+}
+
+/**
+ * Preview actual amounts that will be used for opening a position
+ * This is useful for showing users the real amounts before they confirm
+ */
+export async function previewPositionAmounts(
+  connection: Connection,
+  params: {
+    poolAddress: string;
+    strategy: PositionStrategy;
+    rangeInterval: number;
+    tokenXAmount: string; // в минимальных единицах
+    tokenYAmount: string; // в минимальных единицах
+  },
+): Promise<{
+  actualTokenXAmount: string;
+  actualTokenYAmount: string;
+  tokenXDecimals: number;
+  tokenYDecimals: number;
+}> {
+  const { poolAddress, strategy, rangeInterval, tokenXAmount, tokenYAmount } = params;
+
+  // Create DLMM pool instance
+  const dlmmPool = await createDlmmPool(connection, poolAddress);
+  
+  // Get active bin
+  const activeBin = await dlmmPool.getActiveBin();
+  const activeBinId = activeBin.binId;
+
+  // Calculate min and max bin IDs based on strategy
+  let minBinId: number;
+  let maxBinId: number;
+
+  if (strategy === 'oneSide') {
+    minBinId = activeBinId;
+    maxBinId = activeBinId + rangeInterval * 2;
+  } else {
+    minBinId = activeBinId - rangeInterval;
+    maxBinId = activeBinId + rangeInterval;
+  }
+
+  // Convert amounts to BN
+  const tokenXAmountBN = new BN(tokenXAmount);
+  const tokenYAmountBN = new BN(tokenYAmount);
+
+  let actualTokenXAmountBN: BN;
+  let actualTokenYAmountBN: BN;
+
+  if (strategy === 'balance') {
+    // Balance strategy: autoFillYByStrategy пересчитывает Token Y
+    const autoFilledY = autoFillYByStrategy(
+      activeBinId,
+      (dlmmPool.lbPair as any).binStep,
+      tokenXAmountBN,
+      activeBin.xAmount,
+      activeBin.yAmount,
+      minBinId,
+      maxBinId,
+      StrategyType.Spot,
+    );
+    actualTokenXAmountBN = tokenXAmountBN;
+    actualTokenYAmountBN = autoFilledY;
+  } else {
+    // Imbalance and oneSide: используем указанные пользователем amounts
+    actualTokenXAmountBN = tokenXAmountBN;
+    actualTokenYAmountBN = tokenYAmountBN;
+  }
+
+  // Get token decimals using the proper utility function
+  const tokenXMint = (dlmmPool.lbPair as any).tokenXMint;
+  const tokenYMint = (dlmmPool.lbPair as any).tokenYMint;
+  
+  // Import getTokenDecimals function
+  const { getTokenDecimals } = await import('../utils/tokenUtils.js');
+  
+  // Get decimals using the proper utility that handles known tokens correctly
+  const tokenXDecimals = await getTokenDecimals(connection, tokenXMint.toBase58());
+  const tokenYDecimals = await getTokenDecimals(connection, tokenYMint.toBase58());
+
+  return {
+    actualTokenXAmount: actualTokenXAmountBN.toString(),
+    actualTokenYAmount: actualTokenYAmountBN.toString(),
+    tokenXDecimals,
+    tokenYDecimals,
+  };
 }
 
 /**
@@ -113,8 +200,8 @@ export async function createOpenPositionTransaction(
     maxBinId = activeBinId + rangeInterval;
   }
 
-  // Create position keypair
-  const positionKeypair = Keypair.generate();
+  // Create position keypair (или используем переданный для retry)
+  const positionKeypair = params.positionKeypair || Keypair.generate();
 
   // Convert amounts to BN (BigNumber)
   const tokenXAmountBN = new BN(tokenXAmount);
@@ -179,9 +266,12 @@ export async function createOpenPositionTransaction(
   // Note: position keypair needs to be signed separately by the client
   // According to SDK docs, transactions should be signed with [user, positionKeypair]
   // If multiple transactions, we return all of them for parallel processing
+  // ВСЕГДА получаем свежий blockhash перед созданием транзакции
+  // Используем 'confirmed' вместо 'finalized' для более быстрого получения
+  const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+  
   if (Array.isArray(createPositionTx)) {
     // Обрабатываем все транзакции параллельно
-    const latestBlockhash = await connection.getLatestBlockhash('finalized');
     const versionedTxs = createPositionTx.map(tx => {
       tx.recentBlockhash = latestBlockhash.blockhash;
       tx.feePayer = userPublicKey;
@@ -195,7 +285,6 @@ export async function createOpenPositionTransaction(
       positionKeypair,
     };
   } else {
-    const latestBlockhash = await connection.getLatestBlockhash('finalized');
     createPositionTx.recentBlockhash = latestBlockhash.blockhash;
     createPositionTx.feePayer = userPublicKey;
     const versionedTx = new VersionedTransaction(createPositionTx.compileMessage());
@@ -209,39 +298,191 @@ export async function createOpenPositionTransaction(
 
 /**
  * Close a position in a Meteora DLMM pool
+ * Returns array of transactions if multiple are needed (e.g., when removing liquidity)
  */
 export async function createClosePositionTransaction(
   connection: Connection,
   poolAddress: string,
   positionAddress: string,
   ownerPublicKey: PublicKey,
-): Promise<VersionedTransaction> {
+): Promise<VersionedTransaction | VersionedTransaction[]> {
   const dlmmPool = await createDlmmPool(connection, poolAddress);
   const positionPubKey = new PublicKey(positionAddress);
 
-  // Get the position object first
+  // Проверяем владельца аккаунта позиции перед попыткой закрытия
+  try {
+    const accountInfo = await connection.getAccountInfo(positionPubKey, 'confirmed');
+    if (!accountInfo) {
+      throw new Error(`Position account ${positionAddress} does not exist. It may have already been closed.`);
+    }
+    
+    // Проверяем, что аккаунт принадлежит программе Meteora DLMM
+    const METEORA_DLMM_PROGRAM_ID = new PublicKey('LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo');
+    if (!accountInfo.owner.equals(METEORA_DLMM_PROGRAM_ID)) {
+      // Если аккаунт принадлежит System Program, значит позиция уже закрыта
+      if (accountInfo.owner.equals(new PublicKey('11111111111111111111111111111111'))) {
+        throw new Error(`Position ${positionAddress} has already been closed. The account is owned by System Program.`);
+      }
+      throw new Error(`Position account ${positionAddress} is owned by a different program (${accountInfo.owner.toBase58()}), expected Meteora DLMM.`);
+    }
+  } catch (error: any) {
+    // Если ошибка уже содержит понятное сообщение, пробрасываем её
+    if (error.message && (error.message.includes('already been closed') || error.message.includes('does not exist'))) {
+      throw error;
+    }
+    // Иначе пробуем продолжить - возможно, это временная проблема с RPC
+    console.warn(`[ClosePosition] Warning: Could not verify position account ownership: ${error.message}`);
+  }
+
+  // Получаем актуальные данные позиции перед закрытием
   const { userPositions } = await dlmmPool.getPositionsByUserAndLbPair(ownerPublicKey);
   const position = userPositions.find(p => p.publicKey.equals(positionPubKey));
   
   if (!position) {
-    throw new Error('Position not found');
+    throw new Error(`Position ${positionAddress} not found in user positions. It may have already been closed or does not belong to this user.`);
   }
 
-  // Close position transaction
-  const closePositionTx = await dlmmPool.closePosition({
-    owner: ownerPublicKey,
-    position: position,
-  });
+  // Всегда используем removeLiquidity с shouldClaimAndClose: true для безопасного закрытия
+  // Это гарантирует удаление всей ликвидности перед закрытием позиции
+  const positionBinData = position.positionData?.positionBinData || [];
+  
+  console.log(`[ClosePosition] Position ${positionAddress}: bins count = ${positionBinData.length}`);
+  
+  let closePositionTx: Transaction | Transaction[];
 
-  // Convert to VersionedTransaction
-  // Обрабатываем массив транзакций параллельно (берем первую основную)
+  // Если есть данные о bins, всегда используем removeLiquidity
+  if (positionBinData.length > 0) {
+    // Конвертируем binId в число, обрабатывая случаи когда это BN или undefined
+    const binIdsToRemove = positionBinData
+      .map((bin: any) => {
+        if (!bin || bin.binId === undefined || bin.binId === null) {
+          return null;
+        }
+        // Если binId это BN объект, конвертируем в число
+        if (bin.binId instanceof BN || (bin.binId && typeof bin.binId.toNumber === 'function')) {
+          try {
+            return bin.binId.toNumber();
+          } catch (e) {
+            console.warn(`[ClosePosition] Failed to convert binId to number:`, e);
+            return null;
+          }
+        }
+        // Если это уже число, возвращаем как есть
+        if (typeof bin.binId === 'number') {
+          return bin.binId;
+        }
+        // Пробуем преобразовать в число
+        const numId = Number(bin.binId);
+        return isNaN(numId) ? null : numId;
+      })
+      .filter((id: number | null): id is number => id !== null && typeof id === 'number');
+    
+    if (binIdsToRemove.length === 0) {
+      console.warn(`[ClosePosition] Position has bins but no valid bin IDs, trying direct close`);
+      // Если нет валидных bin IDs, пробуем закрыть напрямую
+      // closePosition принимает position как LbPosition объект
+      closePositionTx = await dlmmPool.closePosition({
+        owner: ownerPublicKey,
+        position: position,
+      });
+    } else {
+      // Sort bin IDs to get correct range
+      binIdsToRemove.sort((a: number, b: number) => a - b);
+
+      console.log(`[ClosePosition] Removing liquidity from bins ${binIdsToRemove[0]} to ${binIdsToRemove[binIdsToRemove.length - 1]}`);
+
+      // Remove all liquidity (100%) and close position
+      // Используем правильный формат параметра согласно документации SDK
+      closePositionTx = await dlmmPool.removeLiquidity({
+        position: position.publicKey,
+        user: ownerPublicKey,
+        fromBinId: binIdsToRemove[0],
+        toBinId: binIdsToRemove[binIdsToRemove.length - 1],
+        bps: new BN(100 * 100), // 100% (10000 bps) для всех bins
+        shouldClaimAndClose: true, // Claim swap fees and close position together
+      });
+    }
+  } else {
+    // Если нет данных о bins, пробуем закрыть напрямую
+    // Но если это вызовет ошибку NonEmptyPosition, используем альтернативный подход
+    console.log(`[ClosePosition] No bin data found, trying direct close`);
+    try {
+      // closePosition принимает position как LbPosition объект
+      closePositionTx = await dlmmPool.closePosition({
+        owner: ownerPublicKey,
+        position: position,
+      });
+    } catch (error: any) {
+      // Если получили ошибку NonEmptyPosition, значит позиция не пустая
+      // Нужно использовать removeLiquidity, но для этого нужны актуальные данные
+      if (error?.message?.includes('NonEmptyPosition') || error?.code === 6030) {
+        console.warn(`[ClosePosition] Direct close failed with NonEmptyPosition error, refreshing position data`);
+        
+        // Получаем актуальные данные позиции еще раз
+        const { userPositions: refreshedPositions } = await dlmmPool.getPositionsByUserAndLbPair(ownerPublicKey);
+        const refreshedPosition = refreshedPositions.find(p => p.publicKey.equals(positionPubKey));
+        
+        if (refreshedPosition?.positionData?.positionBinData && refreshedPosition.positionData.positionBinData.length > 0) {
+          const refreshedBinData = refreshedPosition.positionData.positionBinData;
+          // Конвертируем binId в число, обрабатывая случаи когда это BN или undefined
+          const binIds = refreshedBinData
+            .map((bin: any) => {
+              if (!bin || bin.binId === undefined || bin.binId === null) {
+                return null;
+              }
+              // Если binId это BN объект, конвертируем в число
+              if (bin.binId instanceof BN || (bin.binId && typeof bin.binId.toNumber === 'function')) {
+                try {
+                  return bin.binId.toNumber();
+                } catch (e) {
+                  console.warn(`[ClosePosition] Failed to convert binId to number:`, e);
+                  return null;
+                }
+              }
+              // Если это уже число, возвращаем как есть
+              if (typeof bin.binId === 'number') {
+                return bin.binId;
+              }
+              // Пробуем преобразовать в число
+              const numId = Number(bin.binId);
+              return isNaN(numId) ? null : numId;
+            })
+            .filter((id: number | null): id is number => id !== null && typeof id === 'number');
+          
+          if (binIds.length > 0) {
+            binIds.sort((a: number, b: number) => a - b);
+            console.log(`[ClosePosition] Found ${binIds.length} bins after refresh, using removeLiquidity`);
+            closePositionTx = await dlmmPool.removeLiquidity({
+              position: refreshedPosition.publicKey,
+              user: ownerPublicKey,
+              fromBinId: binIds[0],
+              toBinId: binIds[binIds.length - 1],
+              bps: new BN(100 * 100), // 100% (10000 bps) для всех bins
+              shouldClaimAndClose: true,
+            });
+          } else {
+            throw new Error('Position has bins but no valid bin IDs after refresh');
+          }
+        } else {
+          throw new Error('Position appears empty but close failed - may need manual intervention');
+        }
+      } else {
+        throw error; // Перебрасываем другие ошибки
+      }
+    }
+  }
+
+  // Convert to VersionedTransaction(s)
   const latestBlockhash = await connection.getLatestBlockhash('finalized');
   if (Array.isArray(closePositionTx)) {
-    const tx = closePositionTx[0];
-    tx.recentBlockhash = latestBlockhash.blockhash;
-    tx.feePayer = ownerPublicKey;
-    return new VersionedTransaction(tx.compileMessage());
+    // Если массив транзакций, конвертируем все
+    return closePositionTx.map(tx => {
+      tx.recentBlockhash = latestBlockhash.blockhash;
+      tx.feePayer = ownerPublicKey;
+      return new VersionedTransaction(tx.compileMessage());
+    });
   } else {
+    // Если одна транзакция
     closePositionTx.recentBlockhash = latestBlockhash.blockhash;
     closePositionTx.feePayer = ownerPublicKey;
     return new VersionedTransaction(closePositionTx.compileMessage());
@@ -338,6 +579,49 @@ export async function getPositionBinData(
     amountX: bin.amountX || new BN(0),
     amountY: bin.amountY || new BN(0),
   }));
+}
+
+/**
+ * Get actual token amounts from position after it's created
+ * This calculates real amounts from position bins, which may differ from preview
+ */
+export async function getActualPositionAmounts(
+  connection: Connection,
+  poolAddress: string,
+  positionAddress: string,
+  ownerPublicKey: PublicKey,
+): Promise<{
+  actualTokenXAmount: string;
+  actualTokenYAmount: string;
+  tokenXDecimals: number;
+  tokenYDecimals: number;
+}> {
+  const binData = await getPositionBinData(connection, poolAddress, positionAddress, ownerPublicKey);
+  
+  // Суммируем все токены из всех bins
+  let totalX = new BN(0);
+  let totalY = new BN(0);
+  
+  for (const bin of binData) {
+    totalX = totalX.add(bin.amountX);
+    totalY = totalY.add(bin.amountY);
+  }
+  
+  // Получаем decimals токенов
+  const dlmmPool = await createDlmmPool(connection, poolAddress);
+  const tokenXMint = (dlmmPool.lbPair as any).tokenXMint;
+  const tokenYMint = (dlmmPool.lbPair as any).tokenYMint;
+  
+  const { getTokenDecimals } = await import('../utils/tokenUtils.js');
+  const tokenXDecimals = await getTokenDecimals(connection, tokenXMint.toBase58());
+  const tokenYDecimals = await getTokenDecimals(connection, tokenYMint.toBase58());
+  
+  return {
+    actualTokenXAmount: totalX.toString(),
+    actualTokenYAmount: totalY.toString(),
+    tokenXDecimals,
+    tokenYDecimals,
+  };
 }
 
 /**

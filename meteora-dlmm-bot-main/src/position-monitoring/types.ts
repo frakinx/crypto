@@ -26,6 +26,7 @@ export type PositionInfo = {
   // Bin IDs
   minBinId: number;
   maxBinId: number;
+  rangeInterval: number; // Количество бинов с каждой стороны (используется для открытия новых позиций)
   
   // Статус и метаданные
   status: PositionStatus;
@@ -36,12 +37,25 @@ export type PositionInfo = {
   lastPriceCheck: number; // Последняя проверка цены
   currentPrice?: number; // Текущая цена
   accumulatedFees?: number; // Накопленные комиссии в USD
+  waitingForAveragePriceClose?: boolean; // Флаг: позиция ждет возврата к средней цене после пробития нижней границы
   
   // Для Mirror Swapping
   hedgePosition?: {
     hedgeAmount: string; // Количество для хеджирования
     hedgeTransaction?: string; // Транзакция хеджирования
   };
+  hedgeSwapsHistory?: HedgeSwapInfo[]; // История всех hedge swaps
+};
+
+export type HedgeSwapInfo = {
+  timestamp: number; // Время выполнения swap
+  direction: 'buy' | 'sell'; // Направление swap
+  amount: string; // Количество токенов
+  price: number; // Цена в момент swap
+  priceChangePercent: number; // Изменение цены от начальной
+  signature: string; // Signature транзакции
+  inputMint: string; // Input токен
+  outputMint: string; // Output токен
 };
 
 export type PriceUpdate = {
@@ -57,9 +71,9 @@ export type PositionDecision = {
   positionAddress: string;
   newPositionParams?: {
     poolAddress: string;
-    lowerBoundPrice: number;
-    upperBoundPrice: number;
+    rangeInterval: number; // Используем rangeInterval из старой позиции
   };
+  shouldCloseOld?: boolean; // Флаг для закрытия старой позиции перед открытием новой
 };
 
 export type FeeVsLossCalculation = {

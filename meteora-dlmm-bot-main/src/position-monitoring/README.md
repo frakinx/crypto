@@ -115,8 +115,7 @@ monitor.start(); // Запустить мониторинг
 ## Конфигурация
 
 Админ может настроить:
-- `priceCorridorPercent.upper` - процент выше текущей цены (например, 4%)
-- `priceCorridorPercent.lower` - процент ниже текущей цены (например, 4%)
+- Границы позиций рассчитываются автоматически на основе `rangeInterval`, `binStep` и текущей цены
 - `stopLossPercent` - stop loss в процентах от нижней границы (например, -2%)
 - `feeCheckPercent` - процент от нижней границы для проверки fee (например, 50%)
 - `takeProfitPercent` - take profit в процентах (например, ±2%)

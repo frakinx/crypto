@@ -6,12 +6,6 @@
  */
 
 export type AdminConfig = {
-  // Коридор в процентах от текущей цены
-  priceCorridorPercent: {
-    upper: number; // Процент выше текущей цены (например, 4%)
-    lower: number; // Процент ниже текущей цены (например, 4%)
-  };
-  
   // Параметры для расчета автозакрытия
   stopLossPercent: number; // Stop loss в процентах от нижней границы (например, -2%)
   feeCheckPercent: number; // Процент от нижней границы для проверки fee (например, 50% от нижней границы)
@@ -37,6 +31,8 @@ export type AdminConfig = {
     enabled: boolean; // Включить Mirror Swapping для хеджирования
     hedgeAmountPercent: number; // Процент от позиции для хеджирования (например, 50%)
     slippageBps: number; // Slippage для hedge swap в basis points (например, 100 = 1%)
+    minPriceChangePercent?: number; // Минимальное изменение цены для hedge в % (по умолчанию 0.1%)
+    minHedgeAmount?: number; // Минимальная сумма для hedge (по умолчанию 0.001)
   };
   
   // Средняя цена для закрытия позиций
@@ -48,10 +44,6 @@ export type AdminConfig = {
 
 // Конфигурация по умолчанию
 export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
-  priceCorridorPercent: {
-    upper: 4, // 4% выше текущей цены
-    lower: 4, // 4% ниже текущей цены
-  },
   stopLossPercent: -2, // -2% от нижней границы
   feeCheckPercent: 50, // Проверка на 50% от нижней границы
   takeProfitPercent: 2, // ±2% для TP
@@ -67,6 +59,8 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
     enabled: true,
     hedgeAmountPercent: 50, // Хеджируем 50% позиции
     slippageBps: 100, // 1% slippage для hedge swap
+    minPriceChangePercent: 0.1, // Минимальное изменение цены 0.1% для trigger hedge
+    minHedgeAmount: 0.001, // Минимальная сумма для hedge
   },
   averagePriceClose: {
     enabled: true,
@@ -95,10 +89,6 @@ export function saveAdminConfig(config: AdminConfig): void {
  * Тип для настроек конкретного пула (упрощенная версия AdminConfig)
  */
 export type PoolConfig = {
-  priceCorridorPercent: {
-    upper: number;
-    lower: number;
-  };
   stopLossPercent: number;
   feeCheckPercent: number;
   takeProfitPercent: number;
@@ -106,6 +96,8 @@ export type PoolConfig = {
     enabled: boolean;
     hedgeAmountPercent: number;
     slippageBps: number;
+    minPriceChangePercent?: number;
+    minHedgeAmount?: number;
   };
   averagePriceClose: {
     enabled: boolean;
@@ -142,7 +134,6 @@ export function getPoolConfigOrDefault(poolAddress: string): PoolConfig {
   
   // Возвращаем упрощенную версию дефолтной конфигурации
   return {
-    priceCorridorPercent: DEFAULT_ADMIN_CONFIG.priceCorridorPercent,
     stopLossPercent: DEFAULT_ADMIN_CONFIG.stopLossPercent,
     feeCheckPercent: DEFAULT_ADMIN_CONFIG.feeCheckPercent,
     takeProfitPercent: DEFAULT_ADMIN_CONFIG.takeProfitPercent,

@@ -57,10 +57,9 @@ export async function openPositionWithAutoPool(
     throw new Error('No suitable pool found');
   }
   
-  // Рассчитываем rangeInterval на основе коридора
-  const currentPrice = await monitor['priceMonitor'].getPoolPrice(pool.address);
-  const priceRange = currentPrice * (config.priceCorridorPercent.upper + config.priceCorridorPercent.lower) / 100;
-  const rangeInterval = Math.ceil(priceRange / currentPrice * 100);
+  // Используем фиксированный rangeInterval (например, 10 бинов с каждой стороны)
+  // Границы позиции будут рассчитаны автоматически на основе rangeInterval, binStep и текущей цены
+  const rangeInterval = 10; // Можно настроить в зависимости от стратегии
   
   // Открываем позицию
   const positionManager = monitor['positionManager']; // В реальности нужен публичный метод

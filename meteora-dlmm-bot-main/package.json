@@ -10,6 +10,10 @@
     "server": "concurrently -n \"WEB,BOT\" -c \"cyan,magenta\" \"tsx src/server.ts\" \"tsx src/index.ts\"",
     "server:web": "tsx src/server.ts",
     "server:bot": "tsx src/index.ts",
+    "test-position-open": "tsx src/test-position-open.ts",
+    "test-position-open:list-pools": "tsx src/test-position-open.ts --list-pools",
+    "test-swap-conversion": "tsx src/test-swap-conversion.ts",
+    "test-swap-conversion:popular": "tsx src/test-swap-conversion-extended.ts",
     "lint": "echo 'add your linter'",
     "postinstall": "patch-package"
   },
