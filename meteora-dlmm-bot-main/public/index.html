@@ -7,37 +7,86 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>🌊 Meteora DLMM Pools</h1>
-      <p class="subtitle">Отслеживание пулов ликвидности Meteora</p>
-      <div id="autoRefreshInfo" class="auto-refresh-info">Автообновление каждые 3 минуты</div>
-    </header>
-
-    <!-- Tabs Navigation -->
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="pools">📊 Пулы</button>
-      <button class="tab-btn" data-tab="wallet">👛 Кошелек & Прокси</button>
-      <button class="tab-btn" data-tab="admin">⚙️ Админ панель</button>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1 class="sidebar-title">Meteora</h1>
+      <p class="sidebar-subtitle">DLMM Pools</p>
     </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-tab="pools">
+        <span class="nav-icon">📊</span>
+        <span class="nav-text">Пулы</span>
+      </button>
+      <button class="nav-item" data-tab="wallet">
+        <span class="nav-icon">👛</span>
+        <span class="nav-text">Кошелек</span>
+      </button>
+      <button class="nav-item" data-tab="admin">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-text">Админ</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div id="autoRefreshInfo" class="auto-refresh-info">Автообновление: 3 мин</div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="container">
 
     <!-- Pools Tab -->
     <div id="poolsTab" class="tab-content active">
 
-    <div class="controls">
-      <input type="text" id="searchInput" placeholder="Поиск по названию пула, токену..." />
-      <select id="sortSelect">
-        <option value="liquidity-desc">Ликвидность (убывание)</option>
-        <option value="liquidity-asc">Ликвидность (возрастание)</option>
-        <option value="volume-desc">Объем 24ч (убывание)</option>
-        <option value="volume-asc">Объем 24ч (возрастание)</option>
-        <option value="fees-desc">Комиссии 24ч (убывание)</option>
-        <option value="fees-asc">Комиссии 24ч (возрастание)</option>
-        <option value="apr-desc">APR (убывание)</option>
-        <option value="apr-asc">APR (возрастание)</option>
-      </select>
-      <button id="filterBtn" class="filter-btn">🔍 Фильтр</button>
-      <button id="refreshBtn">🔄 Обновить</button>
+    <!-- Информационные блоки вверху -->
+    <div class="info-blocks">
+      <div class="info-block info-block-green">
+        <div class="info-block-header">
+          <span class="info-block-icon">💰</span>
+          <span class="info-block-title">Баланс позиций</span>
+        </div>
+        <div class="info-block-value" id="positionBalance">$0</div>
+        <div class="info-block-subtitle" id="positionBalanceSOL">0 SOL</div>
+      </div>
+      
+      <div class="info-block info-block-blue">
+        <div class="info-block-header">
+          <span class="info-block-icon">👛</span>
+          <span class="info-block-title">Баланс кошелька</span>
+        </div>
+        <div class="info-block-value" id="walletBalance">$0</div>
+        <div class="info-block-subtitle" id="walletBalanceSOL">0 SOL</div>
+      </div>
+      
+      <div class="info-block info-block-teal">
+        <div class="info-block-header">
+          <span class="info-block-icon">⏳</span>
+          <span class="info-block-title">Невыкупленные комиссии</span>
+        </div>
+        <div class="info-block-value" id="unclaimedFees">$0</div>
+        <div class="info-block-subtitle" id="unclaimedFeesSOL">0 SOL</div>
+      </div>
+      
+      <div class="info-block info-block-purple">
+        <div class="info-block-header">
+          <span class="info-block-icon">✅</span>
+          <span class="info-block-title">Взысканные комиссии</span>
+        </div>
+        <div class="info-block-value" id="claimedFees">$0</div>
+        <div class="info-block-subtitle" id="claimedFeesSOL">0 SOL</div>
+      </div>
+    </div>
+
+    <!-- Секция позиций -->
+    <div class="positions-section">
+      <div class="positions-header">
+        <h2 class="positions-title">Ваши позиции</h2>
+        <div class="positions-count" id="positionsCount">0 активных позиций</div>
+      </div>
+      <div id="positionsContainer" class="positions-container">
+        <!-- Позиции будут загружены здесь -->
+      </div>
     </div>
 
     <div class="stats">
@@ -288,6 +337,23 @@
           </div>
         </div>
 
+        <!-- Channel Width -->
+        <div class="filter-section">
+          <h3>Ширина канала (Channel Width)</h3>
+          <div style="font-size: 0.85em; color: rgba(255, 255, 255, 0.7); margin-bottom: 12px; padding: 8px; background: rgba(102, 126, 234, 0.1); border-radius: 4px; border-left: 3px solid rgba(102, 126, 234, 0.5);">
+            Укажите ширину канала в одну сторону (%). Система автоматически найдет пулы с подходящими bin steps для позиции с диапазоном ≥ указанной ширины × 2.
+          </div>
+          <div class="filter-range">
+            <div class="filter-range-input" style="width: 100%;">
+              <label>Ширина канала (%)</label>
+              <input type="number" id="filterChannelWidth" placeholder="2" step="0.1" min="0.1" max="50" />
+              <small style="display: block; margin-top: 4px; color: rgba(255, 255, 255, 0.5); font-size: 0.85em;">
+                Например: 2% означает диапазон 4% (2% вверх + 2% вниз)
+              </small>
+            </div>
+          </div>
+        </div>
+
         <!-- Bin Step Range -->
         <div class="filter-section">
           <h3>Bin step of the pool</h3>
@@ -523,359 +589,56 @@
   <div id="poolModal" class="pool-modal">
     <div class="pool-modal-content">
       <div class="pool-modal-header">
-        <h2 id="poolModalTitle">Детали пула</h2>
-        <button class="pool-modal-close" id="closePoolModalBtn">&times;</button>
+        <h2 id="poolModalTitle">Открыть позицию</h2>
+        <button 
+          type="button" 
+          class="pool-modal-close" 
+          id="closePoolModalBtn"
+          onclick="document.getElementById('poolModal').classList.remove('show')"
+          style="cursor: pointer; z-index: 10000; position: relative;"
+        >&times;</button>
       </div>
       <div class="pool-modal-body">
         <div id="poolModalLoading" class="pool-modal-loading">Загрузка данных...</div>
         <div id="poolModalContent" style="display: none;">
-          <div class="pool-detail-info">
-            <div class="pool-detail-name" id="poolDetailName"></div>
-            <div class="pool-detail-address" id="poolDetailAddress"></div>
-            <div class="pool-detail-meta" id="poolDetailMeta" style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;"></div>
-          </div>
-          
-          <div class="liquidity-distribution-section">
-            <h3>Liquidity Distribution</h3>
-            <div class="liquidity-distribution-header">
-              <div class="liquidity-pair-info" id="liquidityPairInfo"></div>
+          <form id="openPositionForm">
+            <div class="form-group">
+              <label for="positionTotalAmount" style="color: white; font-size: 1.1em; font-weight: 600; margin-bottom: 12px; display: block;">Общая сумма позиции (USD)</label>
+              <input 
+                type="number" 
+                id="positionTotalAmount" 
+                placeholder="Введите сумму в USD" 
+                step="0.01" 
+                min="0" 
+                required 
+                style="width: 100%; padding: 16px; border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 12px; background: rgba(15, 15, 30, 0.6); color: white; font-size: 16px; font-weight: 500;" 
+              />
             </div>
-            <div class="liquidity-chart-container">
-              <canvas id="liquidityChart"></canvas>
-            </div>
-            <div class="liquidity-legend">
-              <div class="legend-item">
-                <span class="legend-color" style="background: #00D9FF;"></span>
-                <span id="legendTokenX"></span>
-              </div>
-              <div class="legend-item">
-                <span class="legend-color" style="background: #8B5CF6;"></span>
-                <span id="legendTokenY"></span>
-              </div>
-            </div>
-          </div>
-
-          <div class="trading-volume-section">
-            <div class="trading-volume-header">
-              <h3>Trading Volume</h3>
-              <div class="trading-volume-value" id="tradingVolumeValue">$0</div>
-            </div>
-            <div class="trading-volume-chart-container">
-              <canvas id="tradingVolumeChart"></canvas>
-            </div>
-          </div>
-
-          <div class="fees-section">
-            <div class="section-header">
-              <h3>Fees History</h3>
-              <div class="section-value" id="feesValue">$0</div>
-            </div>
-            <div class="chart-container">
-              <canvas id="feesChart"></canvas>
-            </div>
-          </div>
-
-          <div class="tvl-section">
-            <div class="section-header">
-              <h3>TVL (Total Value Locked) History</h3>
-              <div class="section-value" id="tvlValue">$0</div>
-            </div>
-            <div class="chart-container">
-              <canvas id="tvlChart"></canvas>
-            </div>
-          </div>
-
-          <div class="fee-tvl-section">
-            <div class="section-header">
-              <h3>Fee/TVL Ratio History</h3>
-              <div class="section-value" id="feeTvlValue">0%</div>
-            </div>
-            <div class="chart-container">
-              <canvas id="feeTvlChart"></canvas>
-            </div>
-          </div>
-
-          <div class="volume-comparison-section">
-            <div class="section-header">
-              <h3>Volume Comparison (Different Periods)</h3>
-            </div>
-            <div class="chart-container">
-              <canvas id="volumeComparisonChart"></canvas>
-            </div>
-          </div>
-
-          <div class="reserves-section">
-            <div class="section-header">
-              <h3>Token Reserves Distribution</h3>
-            </div>
-            <div class="chart-container">
-              <canvas id="reservesChart"></canvas>
-            </div>
-          </div>
-
-          <div class="pool-detail-stats">
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Bin Step</div>
-              <div class="pool-detail-stat-value" id="poolDetailBinStep"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Active Bin</div>
-              <div class="pool-detail-stat-value" id="poolDetailActiveBin"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Current Price</div>
-              <div class="pool-detail-stat-value" id="poolDetailPrice"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">TVL</div>
-              <div class="pool-detail-stat-value" id="poolDetailTVL"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Volume 24h</div>
-              <div class="pool-detail-stat-value" id="poolDetailVolume24h"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Volume 7d</div>
-              <div class="pool-detail-stat-value" id="poolDetailVolume7d"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Fees 24h</div>
-              <div class="pool-detail-stat-value" id="poolDetailFees24h"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Fees 7d</div>
-              <div class="pool-detail-stat-value" id="poolDetailFees7d"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Base Fee</div>
-              <div class="pool-detail-stat-value" id="poolDetailBaseFee"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Max Fee</div>
-              <div class="pool-detail-stat-value" id="poolDetailMaxFee"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Protocol Fee</div>
-              <div class="pool-detail-stat-value" id="poolDetailProtocolFee"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Dynamic Fee</div>
-              <div class="pool-detail-stat-value" id="poolDetailDynamicFee"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Fee/TVL 24h</div>
-              <div class="pool-detail-stat-value" id="poolDetailFeeTvl"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">APR</div>
-              <div class="pool-detail-stat-value" id="poolDetailAPR"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">APY</div>
-              <div class="pool-detail-stat-value" id="poolDetailAPY"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Reserve X</div>
-              <div class="pool-detail-stat-value" id="poolDetailReserveX"></div>
-            </div>
-            <div class="pool-detail-stat">
-              <div class="pool-detail-stat-label">Reserve Y</div>
-              <div class="pool-detail-stat-value" id="poolDetailReserveY"></div>
-            </div>
-          </div>
-
-          <!-- Дополнительные метрики -->
-          <div class="additional-metrics-section">
-            <h3 style="color: white; margin-bottom: 20px;">Дополнительные метрики</h3>
-            <div class="pool-detail-stats">
-              <div class="pool-detail-stat">
-                <div class="pool-detail-stat-label">Avg Trade Size 24h</div>
-                <div class="pool-detail-stat-value" id="poolDetailAvgTradeSize"></div>
-              </div>
-              <div class="pool-detail-stat">
-                <div class="pool-detail-stat-label">Volume/TVL Ratio</div>
-                <div class="pool-detail-stat-value" id="poolDetailVolumeTvlRatio"></div>
-              </div>
-              <div class="pool-detail-stat">
-                <div class="pool-detail-stat-label">Fees/Volume Ratio</div>
-                <div class="pool-detail-stat-value" id="poolDetailFeesVolumeRatio"></div>
-              </div>
-              <div class="pool-detail-stat">
-                <div class="pool-detail-stat-label">Reserve X Value</div>
-                <div class="pool-detail-stat-value" id="poolDetailReserveXValue"></div>
-              </div>
-              <div class="pool-detail-stat">
-                <div class="pool-detail-stat-label">Reserve Y Value</div>
-                <div class="pool-detail-stat-value" id="poolDetailReserveYValue"></div>
-              </div>
-              <div class="pool-detail-stat">
-                <div class="pool-detail-stat-label">Total Reserves Value</div>
-                <div class="pool-detail-stat-value" id="poolDetailTotalReservesValue"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Open Position Section -->
-          <div class="open-position-section" style="margin-top: 30px; padding: 20px; background: rgba(15, 15, 30, 0.6); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
-            <h3 style="margin-top: 0; color: white; font-size: 1.3em; margin-bottom: 20px;">Открыть позицию в пуле</h3>
             
-            <!-- Pool Settings Section -->
-            <div class="pool-settings-section" style="margin-bottom: 25px; padding: 20px; background: rgba(102, 126, 234, 0.1); border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.3);">
-              <h4 style="color: white; font-size: 1.1em; margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
-                <span>⚙️</span> Настройки мониторинга для этого пула
-              </h4>
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Stop Loss (%):</label>
-                  <input type="number" id="poolStopLossPercent" step="0.1" min="-10" max="0" value="-2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Take Profit (%):</label>
-                  <input type="number" id="poolTakeProfitPercent" step="0.1" min="0" max="100" value="2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Проверка Fee (%):</label>
-                  <input type="number" id="poolFeeCheckPercent" step="0.1" min="0" max="100" value="50" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
-                    <input type="checkbox" id="poolMirrorSwapEnabled" checked style="width: auto; margin: 0;" />
-                    Mirror Swap
-                  </label>
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Hedge Amount (%):</label>
-                  <input type="number" id="poolHedgeAmountPercent" step="1" min="0" max="100" value="50" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Slippage (bps):</label>
-                  <input type="number" id="poolSlippageBps" step="1" min="0" max="10000" value="100" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
-                    <input type="checkbox" id="poolAveragePriceCloseEnabled" checked style="width: auto; margin: 0;" />
-                    Закрытие по средней цене
-                  </label>
-                </div>
-                <div class="form-group">
-                  <label style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em;">Отклонение от средней (%):</label>
-                  <input type="number" id="poolAveragePriceDeviation" step="0.1" min="0" max="10" value="2" style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                </div>
-              </div>
-              <button type="button" id="savePoolSettingsBtn" style="margin-top: 15px; padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
-                💾 Сохранить настройки пула
+            <div class="form-actions" style="margin-top: 24px; display: flex; gap: 12px;">
+              
+              <button 
+                type="submit" 
+                id="openPositionBtn" 
+                class="save-btn" 
+                style="flex: 2; padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 18px; font-weight: 600; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);"
+                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(102, 126, 234, 0.4)'"
+                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.3)'"
+              >
+                🚀 Открыть позицию
               </button>
             </div>
-
-            <form id="openPositionForm">
-              <div class="form-group">
-                <label for="positionStrategy" style="color: white;">Стратегия:</label>
-                <select id="positionStrategy" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;">
-                  <option value="balance">Balance (50/50)</option>
-                  <option value="imbalance">Imbalance (неравномерная)</option>
-                  <option value="oneSide">One Side (односторонняя)</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="positionRangeInterval" style="color: white;">Диапазон (количество bins с каждой стороны):</label>
-                <input type="number" id="positionRangeInterval" value="10" min="1" max="100" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                <small style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Количество bins с каждой стороны от активного bin</small>
-                <div id="positionPriceRange" style="margin-top: 10px; padding: 10px; background: rgba(102, 126, 234, 0.1); border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 6px; display: none;">
-                  <div style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; margin-bottom: 5px;"><strong>Диапазон цен позиции:</strong></div>
-                  <div style="color: rgba(255, 255, 255, 0.8); font-size: 0.85em;">
-                    <div>Нижняя граница: <span id="positionLowerBound" style="color: #ff6b6b; font-weight: bold;">-</span></div>
-                    <div>Текущая цена: <span id="positionCurrentPrice" style="color: #4ecdc4; font-weight: bold;">-</span></div>
-                    <div>Верхняя граница: <span id="positionUpperBound" style="color: #95e1d3; font-weight: bold;">-</span></div>
-                    <div style="margin-top: 5px; color: rgba(255, 255, 255, 0.6); font-size: 0.8em;">Ширина диапазона: <span id="positionRangeWidth" style="color: rgba(255, 255, 255, 0.8);">-</span></div>
-                  </div>
-                </div>
-              </div>
-              <div class="form-group">
-                <label for="positionTokenXAmount" style="color: white;">Количество Token X:</label>
-                <input type="number" id="positionTokenXAmount" placeholder="0" step="0.000000001" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                <small id="positionTokenXHint" style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Введите количество в единицах токена (например, 1 для 1 SOL)</small>
-              </div>
-              <div class="form-group">
-                <label for="positionTokenYAmount" style="color: white;">Количество Token Y:</label>
-                <input type="number" id="positionTokenYAmount" placeholder="0" step="0.000000001" required style="width: 100%; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                <small id="positionTokenYHint" style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">Введите количество в единицах токена (например, 100 для 100 USDC)</small>
-              </div>
-              
-              <!-- Кнопка автобаланса -->
-              <div class="form-group" style="margin-top: 15px;">
-                <div style="display: flex; gap: 10px; align-items: center;">
-                  <input type="number" id="autoBalanceTotalAmount" placeholder="Общая сумма (USD)" step="0.01" min="0" style="flex: 1; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(15, 15, 30, 0.6); color: white;" />
-                  <button type="button" id="autoBalanceBtn" style="padding: 10px 20px; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; white-space: nowrap;">
-                    ⚖️ Автобаланс
-                  </button>
-                </div>
-                <small style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em; display: block; margin-top: 5px;">
-                  Введите общую сумму в USD для автоматического расчета баланса 50/50
-                </small>
-              </div>
-              
-              <!-- Предупреждение о реальных суммах для стратегии Balance -->
-              <div id="positionAmountPreview" style="display: none; margin-top: 15px; padding: 15px; background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px;">
-                <div style="color: #ffc107; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
-                  <span>⚠️</span>
-                  <span>Внимание: Реальные суммы для стратегии Balance (50/50)</span>
-                </div>
-                <div style="color: rgba(255, 255, 255, 0.9); font-size: 0.9em; line-height: 1.6;">
-                  <p style="margin: 5px 0;">При стратегии <strong>Balance (50/50)</strong> система автоматически пересчитывает количество токенов для обеспечения баланса 50/50. Реально списанные суммы могут отличаться от указанных вами.</p>
-                  <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 193, 7, 0.2);">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                      <div>
-                        <span style="color: rgba(255, 255, 255, 0.7);">Указано Token X:</span>
-                        <span id="previewInputX" style="color: white; font-weight: 600; margin-left: 5px;">-</span>
-                      </div>
-                      <div>
-                        <span style="color: rgba(255, 255, 255, 0.7);">Для позиции Token X:</span>
-                        <span id="previewActualX" style="color: #ffc107; font-weight: 600; margin-left: 5px;">-</span>
-                      </div>
-                      <div>
-                        <span style="color: rgba(255, 255, 255, 0.7);">Указано Token Y:</span>
-                        <span id="previewInputY" style="color: white; font-weight: 600; margin-left: 5px;">-</span>
-                      </div>
-                      <div>
-                        <span style="color: rgba(255, 255, 255, 0.7);">Для позиции Token Y:</span>
-                        <span id="previewActualY" style="color: #ffc107; font-weight: 600; margin-left: 5px;">-</span>
-                      </div>
-                    </div>
-                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 193, 7, 0.15);">
-                      <p style="margin: 5px 0; color: rgba(255, 255, 255, 0.8); font-size: 0.85em;">
-                        <strong>⚠️ Важно:</strong> В Phantom вы увидите дополнительные расходы:
-                      </p>
-                      <ul style="margin: 8px 0 0 0; padding-left: 20px; color: rgba(255, 255, 255, 0.7); font-size: 0.85em; line-height: 1.8;">
-                        <li>Суммы для позиции (показаны выше)</li>
-                        <li>Rent для аккаунта позиции (~0.05 SOL, возвращается при закрытии)</li>
-                        <li>Комиссии за транзакцию (~0.00001 SOL)</li>
-                      </ul>
-                      <p style="margin: 8px 0 0 0; color: rgba(255, 255, 255, 0.8); font-size: 0.85em;">
-                        <strong>Итого в Phantom будет больше SOL</strong>, чем показано в preview, из-за rent и комиссий.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="form-actions" style="margin-top: 15px;">
-                <button type="submit" id="openPositionBtn" class="save-btn" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;">
-                  🚀 Открыть позицию
-                </button>
-              </div>
-            </form>
-            <div id="positionStatus" class="rpc-status" style="display: none; margin-top: 15px;">
+          </form>
+          
+          <div id="positionStatus" class="rpc-status" style="display: none; margin-top: 20px;">
               <div class="status-message"></div>
-            </div>
-            <div id="poolSettingsStatus" class="rpc-status" style="display: none; margin-top: 15px;">
-              <div class="status-message"></div>
-            </div>
           </div>
         </div>
         <div id="poolModalError" class="pool-modal-error" style="display: none;"></div>
       </div>
     </div>
   </div>
+  </main>
 
   <!-- Chart.js for graphs -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

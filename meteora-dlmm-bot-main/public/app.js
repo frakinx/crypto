@@ -10,6 +10,7 @@ let refreshInfoTimer = null;
 // Фильтры
 let filters = {
   verified: false,
+  channelWidth: null, // Ширина канала в одну сторону (%)
   binStepMin: null,
   binStepMax: null,
   liquidityMin: null,
@@ -346,6 +347,366 @@ function updateStats() {
   document.getElementById('totalPools').textContent = totalPools.toLocaleString();
   document.getElementById('totalLiquidity').textContent = formatCurrency(totalLiquidity);
   document.getElementById('totalVolume').textContent = formatCurrency(totalVolume);
+  
+  // Обновляем информационные блоки
+  // Пока используем демо-данные, позже можно подключить реальные данные из API
+  updateInfoBlocks();
+  
+  // Загружаем позиции
+  loadPositions();
+}
+
+// Функция для обновления информационных блоков
+async function updateInfoBlocks() {
+  try {
+    // Баланс позиций - считаем из активных позиций
+    const positionBalance = 0; // TODO: получить из API позиций
+    const positionBalanceSOL = 0;
+    
+    // Баланс кошелька - можно получить из localStorage если кошелек подключен
+    const walletBalance = 0; // TODO: получить баланс кошелька
+    const walletBalanceSOL = 0;
+    
+    // Невыкупленные комиссии
+    const unclaimedFees = 0; // TODO: получить из позиций
+    const unclaimedFeesSOL = 0;
+    
+    // Взысканные комиссии (исторические данные)
+    const claimedFees = 0; // TODO: получить из истории
+    const claimedFeesSOL = 0;
+    
+    // Обновляем UI
+    document.getElementById('positionBalance').textContent = formatCurrency(positionBalance);
+    document.getElementById('positionBalanceSOL').textContent = `${positionBalanceSOL.toFixed(6)} SOL`;
+    
+    document.getElementById('walletBalance').textContent = formatCurrency(walletBalance);
+    document.getElementById('walletBalanceSOL').textContent = `${walletBalanceSOL.toFixed(6)} SOL`;
+    
+    document.getElementById('unclaimedFees').textContent = formatCurrency(unclaimedFees);
+    document.getElementById('unclaimedFeesSOL').textContent = `${unclaimedFeesSOL.toFixed(6)} SOL`;
+    
+    document.getElementById('claimedFees').textContent = formatCurrency(claimedFees);
+    document.getElementById('claimedFeesSOL').textContent = `${claimedFeesSOL.toFixed(6)} SOL`;
+  } catch (error) {
+    console.error('Error updating info blocks:', error);
+  }
+}
+
+// Загрузка и отображение позиций
+async function loadPositions() {
+  const positionsContainer = document.getElementById('positionsContainer');
+  const positionsCount = document.getElementById('positionsCount');
+  
+  if (!positionsContainer) {
+    console.warn('positionsContainer not found');
+    return;
+  }
+  
+  try {
+    // Пока используем тестовые данные для заглушки
+    const now = new Date();
+    const mockPositions = [
+      {
+        pair: '$LIGHT/SOL',
+        timer: '01:53:32',
+        openedAt: new Date(now.getTime() - (1 * 3600 + 53 * 60 + 32) * 1000).toISOString(),
+        type: 'SPOT',
+        bins: 100,
+        baseFee: '2%',
+        apr: '+3.8576%',
+        volume: '$6.85M',
+        tvl: '$1.35M',
+        change24h: '+59.61%',
+        pnlSol: '+0.0341',
+        pnlUsd: '+$6.1337',
+        value: '$187.63',
+        roi: '+3.38%',
+        initialLiquidityUsd: '$182',
+        initialLiquiditySol: '0.504654',
+        initialLiquidityToken: '457.131838',
+        tokenName: '$LIGHT',
+        currentLiquidityUsd: '$186',
+        currentLiquiditySol: '0.550979',
+        currentLiquidityToken: '409.001498',
+        claimedFeesUsd: '$1.67',
+        claimedFeesSol: '0.005834',
+        claimedFeesToken: '3.001931',
+        unclaimedFeesUsd: '$0.2113',
+        unclaimedFeesSol: '0.000259',
+        unclaimedFeesToken: '0.778042',
+        stopLoss: '15%',
+        stopLossEnabled: false,
+        takeProfit: '25%',
+        takeProfitEnabled: false,
+        rebalance: 'Отключено',
+        priceRange: {
+          min: '0.00079721',
+          current: '0.00114063',
+          max: '0.00156830'
+        }
+      },
+      {
+        pair: 'CAESAR/SOL',
+        timer: '00:26:04',
+        openedAt: new Date(now.getTime() - (26 * 60 + 4) * 1000).toISOString(),
+        type: 'SPOT',
+        bins: 200,
+        baseFee: '2%',
+        apr: '+10.4318%',
+        volume: '$719.1K',
+        tvl: '$327.9K',
+        change24h: '+405.48%',
+        pnlSol: '+0.0111',
+        pnlUsd: '+$2.05',
+        value: '$91.63',
+        roi: '+2.29%',
+        initialLiquidityUsd: '$89.65',
+        initialLiquiditySol: '0.25',
+        initialLiquidityToken: '2,081.88761',
+        tokenName: 'CAESAR',
+        currentLiquidityUsd: '$91.63',
+        currentLiquiditySol: '0.257751',
+        currentLiquidityToken: '2,018.439883',
+        claimedFeesUsd: '$0.0000',
+        claimedFeesSol: '0',
+        claimedFeesToken: '0',
+        unclaimedFeesUsd: '$0.0275',
+        unclaimedFeesSol: '0.000153',
+        unclaimedFeesToken: '0',
+        stopLoss: '15%',
+        stopLossEnabled: true,
+        takeProfit: '50%',
+        takeProfitEnabled: true,
+        rebalance: 'Отключено',
+        priceRange: {
+          min: '0.00006108',
+          current: '0.00012216',
+          max: '0.00023482'
+        }
+      }
+    ];
+    
+    // Если есть подключенный кошелек, пытаемся загрузить реальные позиции
+    let positions = mockPositions;
+    if (walletPublicKey) {
+      try {
+        const response = await fetch(`/api/positions?userAddress=${encodeURIComponent(walletPublicKey)}`);
+        if (response.ok) {
+          const realPositions = await response.json();
+          if (realPositions.length > 0) {
+            // Конвертируем реальные позиции в формат для отображения
+            positions = await Promise.all(realPositions.map(async (pos) => {
+              // Загружаем детали позиции
+              try {
+                const detailsResponse = await fetch(`/api/positions/${pos.positionAddress}/details`);
+                if (detailsResponse.ok) {
+                  const details = await detailsResponse.json();
+                  return convertPositionToDisplayFormat(details);
+                }
+              } catch (error) {
+                console.error('Error loading position details:', error);
+              }
+              return convertPositionToDisplayFormat(pos);
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading real positions:', error);
+        // Используем тестовые данные при ошибке
+      }
+    }
+    
+    // Обновляем счетчик
+    if (positionsCount) {
+      positionsCount.textContent = `${positions.length} активных позиций`;
+    }
+    
+    // Отображаем позиции
+    if (positions.length === 0) {
+      positionsContainer.innerHTML = '<p style="color: rgba(255, 255, 255, 0.7); text-align: center; padding: 40px;">У вас нет открытых позиций</p>';
+      return;
+    }
+    
+    positionsContainer.innerHTML = positions.map((pos, index) => renderPosition(pos, index)).join('');
+    
+    // Обновляем таймеры каждую секунду
+    if (window.positionTimerInterval) {
+      clearInterval(window.positionTimerInterval);
+    }
+    window.positionTimerInterval = setInterval(() => {
+      const timerElements = positionsContainer.querySelectorAll('.position-timer');
+      timerElements.forEach((timerEl, index) => {
+        if (positions[index] && positions[index].openedAt) {
+          timerEl.textContent = formatTimer(positions[index].openedAt);
+        }
+      });
+    }, 1000);
+    
+  } catch (error) {
+    console.error('Error loading positions:', error);
+    positionsContainer.innerHTML = '<p style="color: #ef4444; text-align: center; padding: 40px;">Ошибка загрузки позиций</p>';
+  }
+}
+
+// Конвертация позиции в формат для отображения
+function convertPositionToDisplayFormat(position) {
+  // TODO: Реализовать конвертацию реальных данных позиции в формат отображения
+  // Пока возвращаем базовую структуру
+  return {
+    pair: position.poolName || 'UNKNOWN/SOL',
+    timer: formatTimer(position.openedAt),
+    openedAt: position.openedAt,
+    type: 'SPOT',
+    bins: position.binStep || 100,
+    baseFee: `${(position.baseFeePercentage || 0) * 100}%`,
+    apr: position.apr ? `+${position.apr.toFixed(4)}%` : '+0%',
+    volume: formatCurrency(position.volume24h || 0),
+    tvl: formatCurrency(position.liquidity || 0),
+    change24h: position.priceChangePercent ? `${position.priceChangePercent >= 0 ? '+' : ''}${position.priceChangePercent.toFixed(2)}%` : '+0%',
+    pnlSol: position.pnlSOL ? `${position.pnlSOL >= 0 ? '+' : ''}${position.pnlSOL.toFixed(4)}` : '+0',
+    pnlUsd: position.pnlUSD ? `${position.pnlUSD >= 0 ? '+' : ''}${formatCurrency(position.pnlUSD)}` : '+$0',
+    value: formatCurrency(position.currentValueUSD || position.initialValueUSD || 0),
+    roi: position.roiPercent ? `${position.roiPercent >= 0 ? '+' : ''}${position.roiPercent.toFixed(2)}%` : '+0%',
+    initialLiquidityUsd: formatCurrency(position.initialValueUSD || 0),
+    initialLiquiditySol: (position.initialTokenXAmount || 0).toFixed(6),
+    initialLiquidityToken: (position.initialTokenYAmount || 0).toFixed(6),
+    currentLiquidityUsd: formatCurrency(position.currentValueUSD || position.initialValueUSD || 0),
+    currentLiquiditySol: (position.tokenXAmount || position.initialTokenXAmount || 0).toFixed(6),
+    currentLiquidityToken: (position.tokenYAmount || position.initialTokenYAmount || 0).toFixed(6),
+    claimedFeesUsd: formatCurrency(position.accumulatedFees || 0),
+    claimedFeesSol: '0',
+    claimedFeesToken: '0',
+    unclaimedFeesUsd: formatCurrency(position.unclaimedFees || 0),
+    unclaimedFeesSol: '0',
+    unclaimedFeesToken: '0',
+    stopLoss: position.stopLossPercent ? `${position.stopLossPercent}%` : '15%',
+    stopLossEnabled: position.stopLossEnabled !== false,
+    takeProfit: position.takeProfitPercent ? `${position.takeProfitPercent}%` : '25%',
+    takeProfitEnabled: position.takeProfitEnabled !== false,
+    rebalance: position.rebalanceEnabled ? 'Включено' : 'Отключено',
+    priceRange: {
+      min: (position.lowerPrice || 0).toFixed(8),
+      current: (position.currentPrice || position.initialPrice || 0).toFixed(8),
+      max: (position.upperPrice || 0).toFixed(8)
+    }
+  };
+}
+
+// Форматирование таймера
+function formatTimer(openedAt) {
+  if (!openedAt) return '00:00:00';
+  const now = new Date();
+  const opened = new Date(openedAt);
+  const diff = Math.floor((now - opened) / 1000);
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  const seconds = diff % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+// Рендеринг позиции
+function renderPosition(pos, index) {
+  const change24hClass = pos.change24h.startsWith('+') ? 'positive' : 'negative';
+  
+  // Вычисляем позицию текущей цены в диапазоне для графика
+  const minPrice = parseFloat(pos.priceRange.min);
+  const maxPrice = parseFloat(pos.priceRange.max);
+  const currentPrice = parseFloat(pos.priceRange.current);
+  const range = maxPrice - minPrice;
+  const currentPosition = range > 0 ? ((currentPrice - minPrice) / range) * 100 : 50;
+  
+  return `
+    <div class="position-card-new">
+      <div class="position-header">
+        <div class="position-pair-name">${pos.pair}</div>
+        <div class="position-timer">${pos.timer}</div>
+      </div>
+      
+      <div class="position-metrics-row">
+        <span class="position-metric-text">${pos.type} • ${pos.bins} bins • BASE FEE ${pos.baseFee} • <span class="positive">${pos.apr} APR</span></span>
+        <span class="position-metric-text">Vol: ${pos.volume} • TVL: ${pos.tvl} • <span class="${change24hClass}">${pos.change24h} (24h)</span></span>
+      </div>
+      
+      <div class="position-pnl">
+        <div class="position-pnl-main">
+          <span class="position-pnl-sol">${pos.pnlSol} SOL</span>
+          <span class="position-pnl-usd">${pos.pnlUsd}</span>
+        </div>
+        <div class="position-pnl-details">
+          <span class="position-pnl-value">ЗНАЧЕНИЕ: ${pos.value}</span>
+          <span class="position-pnl-roi">ROI: ${pos.roi}</span>
+        </div>
+      </div>
+      
+      <div class="position-details-grid">
+        <div class="position-detail-block">
+          <div class="position-detail-title">ВХОДНАЯ ЛИКВИДНОСТЬ (${pos.initialLiquidityUsd})</div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">SOL:</span>
+            <span class="position-detail-value">${pos.initialLiquiditySol}</span>
+          </div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">${pos.tokenName || pos.pair.split('/')[0]}:</span>
+            <span class="position-detail-value">${pos.initialLiquidityToken}</span>
+          </div>
+        </div>
+        
+        <div class="position-detail-block">
+          <div class="position-detail-title">ТЕКУЩАЯ ЛИКВИДНОСТЬ (${pos.currentLiquidityUsd})</div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">SOL:</span>
+            <span class="position-detail-value">${pos.currentLiquiditySol}</span>
+          </div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">${pos.tokenName || pos.pair.split('/')[0]}:</span>
+            <span class="position-detail-value">${pos.currentLiquidityToken}</span>
+          </div>
+        </div>
+        
+        <div class="position-detail-block">
+          <div class="position-detail-title">КОМИССИИ ВЗЫСКАНЫ (${pos.claimedFeesUsd})</div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">SOL:</span>
+            <span class="position-detail-value">${pos.claimedFeesSol}</span>
+          </div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">${pos.tokenName || pos.pair.split('/')[0]}:</span>
+            <span class="position-detail-value">${pos.claimedFeesToken}</span>
+          </div>
+        </div>
+        
+        <div class="position-detail-block">
+          <div class="position-detail-title">КОМИССИИ НЕ ВЗЫСКАНЫ (${pos.unclaimedFeesUsd})</div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">SOL:</span>
+            <span class="position-detail-value">${pos.unclaimedFeesSol}</span>
+          </div>
+          <div class="position-detail-item">
+            <span class="position-detail-label">${pos.tokenName || pos.pair.split('/')[0]}:</span>
+            <span class="position-detail-value">${pos.unclaimedFeesToken}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="position-price-range">
+        <div class="price-range-container">
+          <div class="price-range-bar">
+            <div class="price-range-gradient"></div>
+            <div class="price-range-line-wrapper" style="left: ${currentPosition}%;">
+              <div class="price-range-marker price-range-marker-top"></div>
+              <div class="price-range-line"></div>
+              <div class="price-range-marker price-range-marker-bottom"></div>
+              <div class="price-range-current-value">${pos.priceRange.current}</div>
+            </div>
+          </div>
+          <div class="price-range-labels">
+            <span class="price-range-label price-range-label-min">${pos.priceRange.min}</span>
+            <span class="price-range-label price-range-label-max">${pos.priceRange.max}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 // Применение фильтров и сортировки
@@ -353,8 +714,10 @@ function applyFilters() {
   console.log('🔍 ========== НАЧАЛО ФИЛЬТРАЦИИ ==========');
   console.log('📊 Всего пулов в базе:', allPools.length);
   
-  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-  const sortValue = document.getElementById('sortSelect').value;
+  const searchInputEl = document.getElementById('searchInput');
+  const sortSelectEl = document.getElementById('sortSelect');
+  const searchTerm = searchInputEl ? searchInputEl.value.toLowerCase() : '';
+  const sortValue = sortSelectEl ? sortSelectEl.value : 'liquidity-desc';
   
   console.log('🔎 Поисковый запрос:', searchTerm || '(пусто)');
   console.log('📋 Текущие фильтры:', JSON.stringify(filters, null, 2));
@@ -374,11 +737,49 @@ function applyFilters() {
     console.log(`🔎 После поиска "${searchTerm}": ${beforeSearch} → ${poolsToFilter.length} пулов`);
   }
   
+  // МИНИМАЛЬНЫЙ ФИЛЬТР ПО УМОЛЧАНИЮ: Volume 24H >= TVL
+  // Это критически важно - на пулах где объем меньше ликвидности мы будем терять деньги
+  const beforeMinFilter = poolsToFilter.length;
+  poolsToFilter = poolsToFilter.filter((pool) => {
+    const volume24h = parseFloat(pool.trade_volume_24h || pool.volume?.hour_24 || 0);
+    const liquidity = parseFloat(pool.liquidity || 0);
+    
+    // Если ликвидность = 0, пропускаем пул
+    if (liquidity === 0) {
+      return false;
+    }
+    
+    // Объем за 24ч должен быть >= TVL (ликвидности)
+    return volume24h >= liquidity;
+  });
+  console.log(`⚡ Минимальный фильтр (Volume 24H >= TVL): ${beforeMinFilter} → ${poolsToFilter.length} пулов`);
+  
   // Применяем дополнительные фильтры
   filteredPools = poolsToFilter.filter((pool) => {
+    
     // Verified filter
     if (filters.verified) {
       if (!pool.is_verified) {
+        return false;
+      }
+    }
+    
+    // Channel width filter - проверяем, подходит ли bin step для заданной ширины канала
+    if (filters.channelWidth !== null && filters.channelWidth > 0) {
+      const rangeInterval = 10; // Стандартное значение rangeInterval для позиции
+      const channelWidthTotal = filters.channelWidth * 2; // Общая ширина канала (вверх + вниз) в процентах
+      const totalBins = rangeInterval * 2; // Общее количество бинов в диапазоне (20)
+      
+      // Минимальный bin_step, необходимый для достижения заданной ширины канала
+      // В Meteora DLMM: price_change_per_bin = bin_step / 10000 (в долях)
+      // Для totalBins бинов: общий диапазон = totalBins * (bin_step / 10000) * 100 (в процентах)
+      // Нужно: totalBins * (bin_step / 10000) * 100 >= channelWidthTotal
+      // Отсюда: bin_step >= (channelWidthTotal / totalBins) * 100
+      // Пример: для 4% и 20 бинов: bin_step >= (4 / 20) * 100 = 20
+      const minBinStepRequired = (channelWidthTotal / totalBins) * 100;
+      
+      const binStep = parseFloat(pool.bin_step || 0);
+      if (binStep < minBinStepRequired) {
         return false;
       }
     }
@@ -507,6 +908,20 @@ function applyFilters() {
   console.log(`📉 Отфильтровано: ${poolsToFilter.length - filteredPools.length} пулов (${((poolsToFilter.length - filteredPools.length) / poolsToFilter.length * 100).toFixed(2)}%)`);
   
   // Подсчитываем статистику по каждому фильтру
+  if (filters.channelWidth !== null && filters.channelWidth > 0) {
+    const rangeInterval = 10;
+    const channelWidthTotal = filters.channelWidth * 2;
+    const totalBins = rangeInterval * 2;
+    const minBinStepRequired = (channelWidthTotal / totalBins) * 100;
+    const matchingCount = poolsToFilter.filter(p => {
+      const binStep = parseFloat(p.bin_step || 0);
+      return binStep >= minBinStepRequired;
+    }).length;
+    console.log(`📏 Фильтр по ширине канала: ${filters.channelWidth}% (общая ${channelWidthTotal}%)`);
+    console.log(`   - Требуется min bin_step: ${minBinStepRequired.toFixed(2)}`);
+    console.log(`   - Подходящих пулов: ${matchingCount} из ${poolsToFilter.length}`);
+  }
+  
   if (filters.verified) {
     const verifiedCount = poolsToFilter.filter(p => p.is_verified).length;
     console.log(`✅ Verified фильтр: ${verifiedCount} verified пулов из ${poolsToFilter.length}`);
@@ -694,6 +1109,7 @@ function applyFilters() {
 
 // Отрисовка пулов
 function renderPools() {
+  console.log('🎨 Rendering pools...', { filteredCount: filteredPools.length, displayedCount });
   const containerEl = document.getElementById('poolsContainer');
   const loadMoreContainer = document.getElementById('loadMoreContainer');
   const loadMoreBtn = document.getElementById('loadMoreBtn');
@@ -754,106 +1170,299 @@ function renderPools() {
     return;
   }
   
-  // Отображаем только первые displayedCount пулов
-  const poolsToDisplay = filteredPools.slice(0, displayedCount);
-  const hasMore = filteredPools.length > displayedCount;
+  // Группируем пулы по парам токенов
+  const poolsByPair = new Map();
   
-  containerEl.innerHTML = poolsToDisplay.map(pool => {
+  filteredPools.forEach(pool => {
+    const tokenXMint = pool.tokenXMint || pool.token_x?.mint || pool.mint_x || pool.base_mint || '';
+    const tokenYMint = pool.tokenYMint || pool.token_y?.mint || pool.mint_y || pool.quote_mint || '';
+    
+    // Получаем названия токенов из разных возможных источников
+    let tokenXName = pool.tokenX?.symbol || pool.token_x?.symbol || pool.tokenX?.name || pool.token_x?.name || '';
+    let tokenYName = pool.tokenY?.symbol || pool.token_y?.symbol || pool.tokenY?.name || pool.token_y?.name || '';
+    
+    // Если названия не найдены, пытаемся извлечь из названия пула
+    if (!tokenXName || !tokenYName) {
+      if (pool.name) {
+        // Пробуем разные разделители: -, /, пробел
+        let parts = [];
+        if (pool.name.includes('-')) {
+          // Для формата "TOKEN-TOKEN" или "TOKEN-TOKEN/TOKEN"
+          const firstPart = pool.name.split('/')[0]; // Берем часть до "/" если есть
+          parts = firstPart.split('-');
+        } else if (pool.name.includes('/')) {
+          parts = pool.name.split('/');
+        } else if (pool.name.includes(' ')) {
+          parts = pool.name.split(' ');
+        }
+        
+        if (parts.length >= 2) {
+          if (!tokenXName) tokenXName = parts[0].trim();
+          if (!tokenYName) tokenYName = parts[1].trim();
+        }
+      }
+    }
+    
+    // Fallback если всё еще не найдены
+    if (!tokenXName) tokenXName = 'Token X';
+    if (!tokenYName) tokenYName = 'Token Y';
+    
+    // Создаем ключ для пары (нормализуем порядок токенов)
+    const pairKey = tokenXMint && tokenYMint 
+      ? [tokenXMint, tokenYMint].sort().join('|')
+      : pool.address; // Если нет пары, используем адрес как ключ
+    
+    if (!poolsByPair.has(pairKey)) {
+      poolsByPair.set(pairKey, {
+        tokenXMint,
+        tokenYMint,
+        pools: [],
+        tokenXName,
+        tokenYName,
+        isVerified: pool.is_verified || false,
+        // Сохраняем первый пул для получения базовой информации
+        firstPool: pool
+      });
+    }
+    
+    poolsByPair.get(pairKey).pools.push(pool);
+  });
+  
+  // Преобразуем Map в массив и сортируем по общей ликвидности
+  const pairsArray = Array.from(poolsByPair.values()).map(pair => {
+    // Агрегируем данные по всем пулам пары
+    const totalLiquidity = pair.pools.reduce((sum, p) => sum + parseFloat(p.liquidity || 0), 0);
+    const totalVolume24h = pair.pools.reduce((sum, p) => sum + parseFloat(p.trade_volume_24h || p.volume?.hour_24 || 0), 0);
+    const totalFees24h = pair.pools.reduce((sum, p) => sum + parseFloat(p.fees_24h || p.fees?.hour_24 || 0), 0);
+    const maxApr = Math.max(...pair.pools.map(p => parseFloat(p.apr || 0)));
+    const maxApy = Math.max(...pair.pools.map(p => parseFloat(p.apy || 0)));
+    const binStepsCount = pair.pools.length;
+    const price = parseFloat(pair.pools[0]?.price || pair.pools[0]?.current_price || pair.pools[0]?.price_usd || 0);
+    
+    return {
+      ...pair,
+      totalLiquidity,
+      totalVolume24h,
+      totalFees24h,
+      maxApr,
+      maxApy,
+      binStepsCount,
+      price
+    };
+  }).sort((a, b) => b.totalLiquidity - a.totalLiquidity);
+  
+  console.log(`📊 Создано ${pairsArray.length} пар из ${filteredPools.length} пулов`);
+  
+  // Отображаем только первые displayedCount пар
+  const pairsToDisplay = pairsArray.slice(0, displayedCount);
+  const hasMore = pairsArray.length > displayedCount;
+  
+  // Создаем таблицу пар
+  const tableHtml = `
+    <div class="pairs-table">
+      <!-- Строка с фильтрами и сортировкой -->
+      <div class="pairs-table-filters">
+        <input type="text" id="searchInput" class="pairs-search-input" placeholder="Поиск по паре..." />
+        <select id="sortSelect" class="pairs-sort-select">
+          <option value="liquidity-desc">Ликвидность ↓</option>
+          <option value="liquidity-asc">Ликвидность ↑</option>
+          <option value="volume-desc">Объем 24ч ↓</option>
+          <option value="volume-asc">Объем 24ч ↑</option>
+          <option value="fees-desc">Комиссии 24ч ↓</option>
+          <option value="fees-asc">Комиссии 24ч ↑</option>
+          <option value="apr-desc">APR ↓</option>
+          <option value="apr-asc">APR ↑</option>
+        </select>
+        <button id="filterBtn" class="pairs-filter-btn">🔍 Фильтр</button>
+      </div>
+      
+      <div class="pairs-table-header">
+        <div class="pairs-col pairs-col-num">#</div>
+        <div class="pairs-col pairs-col-pair">Pair</div>
+        <div class="pairs-col pairs-col-tvl">TVL</div>
+        <div class="pairs-col pairs-col-volume">Volume 24H</div>
+        <div class="pairs-col pairs-col-apr">Max APR</div>
+      </div>
+      ${pairsToDisplay.map((pair, pairIndex) => {
+        // Формируем название пары
+        let pairName = `${pair.tokenXName}/${pair.tokenYName}`;
+        
+        // Если названия не определены, пытаемся получить их из имени первого пула
+        if ((pairName === 'Token X/Token Y' || pair.tokenXName === 'Token X' || pair.tokenYName === 'Token Y') && pair.firstPool?.name) {
+          // Парсим название пула для получения названий токенов
+          const poolName = pair.firstPool.name;
+          if (poolName.includes('-')) {
+            // Для формата "TOKEN-TOKEN" берем часть до "/" если есть
+            const basePart = poolName.split('/')[0];
+            const parts = basePart.split('-');
+            if (parts.length >= 2) {
+              pairName = `${parts[0].trim()}-${parts[1].trim()}`;
+            } else {
+              pairName = poolName.split('/')[0]; // Берем первую часть до "/"
+            }
+          } else if (poolName.includes('/')) {
+            const parts = poolName.split('/');
+            if (parts.length >= 2) {
+              pairName = `${parts[0].trim()}/${parts[1].trim()}`;
+            } else {
+              pairName = poolName;
+            }
+          } else {
+            pairName = poolName;
+          }
+        }
+        
+        // Логируем для отладки
+        if (pairIndex < 5) {
+          console.log(`Пара #${pairIndex}:`, {
+            tokenXName: pair.tokenXName,
+            tokenYName: pair.tokenYName,
+            finalName: pairName,
+            firstPoolName: pair.firstPool?.name
+          });
+        }
+        
+        // Сортируем пулы по bin step
+        const sortedPools = [...pair.pools].sort((a, b) => {
+          const binStepA = parseInt(a.bin_step || a.binStep || 0);
+          const binStepB = parseInt(b.bin_step || b.binStep || 0);
+          return binStepA - binStepB;
+        });
+        
+        
+        // Генерируем HTML для bin steps
+        const binStepsHtml = sortedPools.map(pool => {
+          const binStep = pool.bin_step || pool.binStep || '-';
     const liquidity = parseFloat(pool.liquidity || 0);
     const volume24h = parseFloat(pool.trade_volume_24h || pool.volume?.hour_24 || 0);
     const fees24h = parseFloat(pool.fees_24h || pool.fees?.hour_24 || 0);
     const apr = parseFloat(pool.apr || 0);
-    const apy = parseFloat(pool.apy || 0);
     const baseFee = parseFloat(pool.base_fee_percentage || pool.baseFee || pool.base_fee_bps || 0);
-    const price = parseFloat(pool.price || pool.current_price || pool.price_usd || 0);
-    const binStep = pool.bin_step || pool.binStep || '-';
-    
-    // Получаем mint адреса токенов
-    const tokenXMint = pool.tokenXMint || pool.token_x?.mint || pool.base_mint || '';
-    const tokenYMint = pool.tokenYMint || pool.token_y?.mint || pool.quote_mint || '';
-    
-    // Получаем названия токенов
-    const tokenXName = pool.tokenX?.symbol || pool.token_x?.symbol || pool.tokenX?.name || pool.token_x?.name || 'Token X';
-    const tokenYName = pool.tokenY?.symbol || pool.token_y?.symbol || pool.tokenY?.name || pool.token_y?.name || 'Token Y';
     
     return `
-      <div class="pool-card" data-pool-address="${pool.address}" style="cursor: pointer;">
-        <div class="pool-header">
-          <div class="pool-name">${pool.name || 'Unknown'}</div>
-          ${pool.is_verified ? '<span class="pool-verified">✓ Verified</span>' : ''}
+            <div class="bin-step-row" data-pool-address="${pool.address}">
+              <div class="bin-step-col bin-step-num">
+                <span class="bin-step-badge">Bin ${binStep}</span>
         </div>
-        ${tokenXMint && tokenYMint ? `
-          <div class="pool-pair" data-token-x-mint="${tokenXMint}" data-token-y-mint="${tokenYMint}" style="margin-bottom: 10px; padding: 8px; background: rgba(102, 126, 234, 0.1); border-radius: 6px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(102, 126, 234, 0.2)'" onmouseout="this.style.background='rgba(102, 126, 234, 0.1)'">
-            <span style="font-weight: 600; color: #667eea;">🔗 ${tokenXName} / ${tokenYName}</span>
-            <span style="font-size: 0.85em; color: #666; margin-left: 8px;">(все пулы этой пары)</span>
+              <div class="bin-step-col">
+                <span class="bin-step-label">Fee</span>
+                <span class="bin-step-value">${formatPercent(baseFee)}</span>
           </div>
-        ` : ''}
-        <div class="pool-address">${pool.address}</div>
-        <div class="pool-info">
-          <div class="pool-info-item">
-            <span class="pool-info-label">Ликвидность</span>
-            <span class="pool-info-value">${formatCurrency(liquidity)}</span>
+              <div class="bin-step-col">
+                <span class="bin-step-label">TVL</span>
+                <span class="bin-step-value">${formatCurrency(liquidity)}</span>
           </div>
-          <div class="pool-info-item">
-            <span class="pool-info-label">Объем 24ч</span>
-            <span class="pool-info-value">${formatCurrency(volume24h)}</span>
+              <div class="bin-step-col">
+                <span class="bin-step-label">Vol 24h</span>
+                <span class="bin-step-value">${formatCurrency(volume24h)}</span>
           </div>
-          <div class="pool-info-item">
-            <span class="pool-info-label">Комиссии 24ч</span>
-            <span class="pool-info-value">${formatCurrency(fees24h)}</span>
+              <div class="bin-step-col">
+                <span class="bin-step-label">Fee/TVL</span>
+                <span class="bin-step-value">${fees24h > 0 && liquidity > 0 ? formatPercent((fees24h / liquidity) * 100) : '0%'}</span>
           </div>
-          <div class="pool-info-item">
-            <span class="pool-info-label">Базовая комиссия</span>
-            <span class="pool-info-value">${formatPercent(baseFee)}</span>
+              <div class="bin-step-col">
+                <span class="bin-step-label">APR</span>
+                <span class="bin-step-value apr-highlight">${apr > 0 ? formatPercent(apr) : '-'}</span>
           </div>
-          ${binStep !== '-' ? `
-            <div class="pool-info-item">
-              <span class="pool-info-label">Bin Step</span>
-              <span class="pool-info-value">${binStep}</span>
+              <div class="bin-step-col bin-step-action">
+                <button 
+                  type="button" 
+                  class="create-position-btn" 
+                  data-pool-address="${pool.address}"
+                  style="padding: 8px 16px; background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%); color: white; border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s;"
+                  onmouseover="this.style.background='linear-gradient(135deg, #1a1a1a 0%, #252525 100%)'; this.style.borderColor='rgba(102, 126, 234, 0.5)'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.2)'"
+                  onmouseout="this.style.background='linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%)'; this.style.borderColor='rgba(102, 126, 234, 0.3)'; this.style.transform='translateY(0)'; this.style.boxShadow='none'"
+                >
+                  Открыть позицию
+                </button>
             </div>
-          ` : ''}
-          ${price > 0 ? `
-            <div class="pool-info-item">
-              <span class="pool-info-label">Цена</span>
-              <span class="pool-info-value">$${price.toFixed(4)}</span>
             </div>
-          ` : ''}
+          `;
+        }).join('');
+        
+        return `
+          <div class="pair-container" data-pair-index="${pairIndex}">
+            <div class="pairs-table-row">
+              <div class="pairs-col pairs-col-num">${pairIndex + 1}</div>
+              <div class="pairs-col pairs-col-pair">
+                <span class="pair-name">${pairName}</span>
+                <span class="pair-pools-count">${pair.binStepsCount} pool${pair.binStepsCount > 1 ? 's' : ''}</span>
+                ${pair.isVerified ? '<span class="pair-verified">✓</span>' : ''}
+                <span class="expand-icon">▼</span>
         </div>
-        ${apr > 0 || apy > 0 ? `
-          <div class="pool-apr ${apr === 0 ? 'zero' : ''}">
-            APR: ${formatPercent(apr)} | APY: ${formatPercent(apy)}
+              <div class="pairs-col pairs-col-tvl">${formatCurrency(pair.totalLiquidity)}</div>
+              <div class="pairs-col pairs-col-volume">${formatCurrency(pair.totalVolume24h)}</div>
+              <div class="pairs-col pairs-col-apr">${pair.maxApr > 0 ? formatPercent(pair.maxApr) : '-'}</div>
           </div>
-        ` : ''}
+            
+            <div class="bin-steps-list" style="display: none;">
+              ${binStepsHtml}
+          </div>
       </div>
     `;
-  }).join('');
+      }).join('')}
+    </div>
+  `;
+  
+  containerEl.innerHTML = tableHtml;
 
-  // Добавляем обработчики клика на карточки пулов
-  containerEl.querySelectorAll('.pool-card').forEach(card => {
-    card.addEventListener('click', (e) => {
-      // Если клик был на элемент пары токенов, не открываем модальное окно пула
-      if (e.target.closest('.pool-pair')) {
-        e.stopPropagation();
-        const pairEl = e.target.closest('.pool-pair');
-        const tokenXMint = pairEl.getAttribute('data-token-x-mint');
-        const tokenYMint = pairEl.getAttribute('data-token-y-mint');
-        if (tokenXMint && tokenYMint) {
-          openPairPoolsModal(tokenXMint, tokenYMint);
-        }
-        return;
-      }
+  // Восстанавливаем значения поиска и сортировки
+  const searchInput = containerEl.querySelector('#searchInput');
+  const sortSelect = containerEl.querySelector('#sortSelect');
+  
+  // Сохраняем и восстанавливаем значение поиска
+  if (searchInput) {
+    const savedSearch = sessionStorage.getItem('poolsSearch') || '';
+    searchInput.value = savedSearch;
+  }
+  
+  // Сохраняем и восстанавливаем значение сортировки
+  if (sortSelect) {
+    const savedSort = sessionStorage.getItem('poolsSort') || 'liquidity-desc';
+    sortSelect.value = savedSort;
+  }
+
+  // Добавляем обработчики клика для раскрытия/сворачивания bin steps
+  containerEl.querySelectorAll('.pair-container').forEach((pairContainer) => {
+    const tableRow = pairContainer.querySelector('.pairs-table-row');
+    const binStepsList = pairContainer.querySelector('.bin-steps-list');
+    const expandIcon = pairContainer.querySelector('.expand-icon');
+    
+    tableRow.addEventListener('click', (e) => {
+      // Не открываем, если кликнули на verified badge
+      if (e.target.closest('.pair-verified')) return;
       
-      const address = card.getAttribute('data-pool-address');
-      if (address) {
-        openPoolModal(address);
+      const isExpanded = binStepsList.style.display === 'block';
+      
+      if (isExpanded) {
+        // Сворачиваем
+        binStepsList.style.display = 'none';
+        expandIcon.style.transform = 'rotate(0deg)';
+        pairContainer.classList.remove('expanded');
+      } else {
+        // Разворачиваем
+        binStepsList.style.display = 'block';
+        expandIcon.style.transform = 'rotate(180deg)';
+        pairContainer.classList.add('expanded');
       }
+    });
+    
+    // Добавляем обработчики клика на кнопки "Создать позицию"
+    binStepsList.querySelectorAll('.create-position-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Предотвращаем всплытие события
+        const poolAddress = btn.getAttribute('data-pool-address');
+        if (poolAddress) {
+          openPoolModal(poolAddress);
+        }
+      });
     });
   });
   
   // Показываем/скрываем кнопку "Загрузить еще"
   if (hasMore) {
     loadMoreContainer.style.display = 'block';
-    poolsInfo.textContent = `Показано ${poolsToDisplay.length} из ${filteredPools.length} пулов`;
+    poolsInfo.textContent = `Показано ${pairsToDisplay.length} из ${pairsArray.length} пар (всего ${filteredPools.length} пулов)`;
   } else {
     loadMoreContainer.style.display = 'none';
   }
@@ -908,6 +1517,8 @@ function openFilterModal() {
   
   // Заполняем форму текущими значениями фильтров
   document.getElementById('filterVerified').checked = filters.verified;
+  const channelWidthInput = document.getElementById('filterChannelWidth');
+  if (channelWidthInput) channelWidthInput.value = filters.channelWidth || '';
   document.getElementById('filterBinStepMin').value = filters.binStepMin || '';
   document.getElementById('filterBinStepMax').value = filters.binStepMax || '';
   document.getElementById('filterLiquidityMin').value = filters.liquidityMin || '';
@@ -935,6 +1546,7 @@ function closeFilterModal() {
 function resetFilters() {
   filters = {
     verified: false,
+    channelWidth: null,
     binStepMin: null,
     binStepMax: null,
     liquidityMin: null,
@@ -955,6 +1567,8 @@ function resetFilters() {
   
   // Очищаем форму
   document.getElementById('filterVerified').checked = false;
+  const channelWidthInput = document.getElementById('filterChannelWidth');
+  if (channelWidthInput) channelWidthInput.value = '';
   document.getElementById('filterBinStepMin').value = '';
   document.getElementById('filterBinStepMax').value = '';
   document.getElementById('filterLiquidityMin').value = '';
@@ -979,6 +1593,10 @@ function resetFilters() {
 function saveFilters() {
   // Сохраняем значения из формы
   filters.verified = document.getElementById('filterVerified').checked;
+  
+  const channelWidthInput = document.getElementById('filterChannelWidth');
+  const channelWidth = channelWidthInput ? channelWidthInput.value.trim() : '';
+  filters.channelWidth = channelWidth && channelWidth !== '' ? parseFloat(channelWidth) : null;
   
   const binStepMin = document.getElementById('filterBinStepMin').value.trim();
   filters.binStepMin = binStepMin && binStepMin !== '' ? parseFloat(binStepMin) : null;
@@ -1027,6 +1645,17 @@ function saveFilters() {
   console.log('💾 ========== СОХРАНЕНИЕ ФИЛЬТРОВ ==========');
   console.log('💾 Сохраненные фильтры:', JSON.stringify(filters, null, 2));
   console.log(`   - Verified: ${filters.verified}`);
+  if (filters.channelWidth !== null && filters.channelWidth > 0) {
+    const rangeInterval = 10;
+    const channelWidthTotal = filters.channelWidth * 2;
+    const totalBins = rangeInterval * 2;
+    const minBinStepRequired = (channelWidthTotal / totalBins) * 100;
+    console.log(`   - Ширина канала: ${filters.channelWidth}% (общая ${channelWidthTotal}%)`);
+    console.log(`   - Требуется min bin_step: ${minBinStepRequired.toFixed(2)}`);
+  } else {
+    console.log(`   - Ширина канала: не указана`);
+  }
+  console.log(`   - Bin Step: ${filters.binStepMin || 'мин нет'} - ${filters.binStepMax || 'макс нет'}`);
   console.log(`   - Launchpads (${filters.launchpads.length}):`, filters.launchpads);
   console.log(`   - LFG: ${filters.lfg}`);
   console.log(`   - Liquidity: ${filters.liquidityMin || 'мин нет'} - ${filters.liquidityMax || 'макс нет'}`);
@@ -1079,7 +1708,7 @@ function updateFilterButtonIndicator() {
 
 // ========== TABS FUNCTIONALITY ==========
 function initTabs() {
-  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabButtons = document.querySelectorAll('.nav-item');
   const tabContents = document.querySelectorAll('.tab-content');
 
   tabButtons.forEach(button => {
@@ -1093,6 +1722,11 @@ function initTabs() {
       // Add active class to clicked tab and corresponding content
       button.classList.add('active');
       document.getElementById(`${targetTab}Tab`).classList.add('active');
+      
+      // Загружаем позиции при переключении на вкладку pools
+      if (targetTab === 'pools') {
+        loadPositions();
+      }
     });
   });
 }
@@ -1102,22 +1736,36 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize launchpad list
   initLaunchpadList();
 
-  // Обработчики событий для фильтров
-  const searchInput = document.getElementById('searchInput');
-  const sortSelect = document.getElementById('sortSelect');
-  const refreshBtn = document.getElementById('refreshBtn');
+  // Обработчики событий для фильтров (используем делегирование событий)
+  const poolsContainer = document.getElementById('poolsContainer');
   const loadMoreBtn = document.getElementById('loadMoreBtn');
-  const filterBtn = document.getElementById('filterBtn');
   const closeFilterBtn = document.getElementById('closeFilterBtn');
   const resetFilterBtn = document.getElementById('resetFilterBtn');
   const saveFilterBtn = document.getElementById('saveFilterBtn');
   const selectAllLaunchpads = document.getElementById('selectAllLaunchpads');
 
-  if (searchInput) searchInput.addEventListener('input', applyFilters);
-  if (sortSelect) sortSelect.addEventListener('change', applyFilters);
-  if (refreshBtn) refreshBtn.addEventListener('click', refreshPools);
+  // Делегирование событий для динамически создаваемых элементов
+  if (poolsContainer) {
+    poolsContainer.addEventListener('input', (e) => {
+      if (e.target.id === 'searchInput') {
+        sessionStorage.setItem('poolsSearch', e.target.value);
+        applyFilters();
+      }
+    });
+    poolsContainer.addEventListener('change', (e) => {
+      if (e.target.id === 'sortSelect') {
+        sessionStorage.setItem('poolsSort', e.target.value);
+        applyFilters();
+      }
+    });
+    poolsContainer.addEventListener('click', (e) => {
+      if (e.target.id === 'filterBtn' || e.target.closest('#filterBtn')) {
+        openFilterModal();
+      }
+    });
+  }
+  
   if (loadMoreBtn) loadMoreBtn.addEventListener('click', loadMorePools);
-  if (filterBtn) filterBtn.addEventListener('click', openFilterModal);
   if (closeFilterBtn) closeFilterBtn.addEventListener('click', closeFilterModal);
   if (resetFilterBtn) resetFilterBtn.addEventListener('click', resetFilters);
   if (saveFilterBtn) saveFilterBtn.addEventListener('click', saveFilters);
@@ -1135,6 +1783,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Загрузка при старте
   loadPools(true, true);
+  loadPositions(); // Загружаем позиции
   updateFilterButtonIndicator();
 
   // Запускаем автообновление каждые 3 минуты
@@ -1172,18 +1821,32 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load saved settings on page load
   loadWalletSettings();
 
-  // Pool modal event listeners
+  // Pool modal event listeners - ПРОСТОЕ РЕШЕНИЕ
   const closePoolModalBtn = document.getElementById('closePoolModalBtn');
   const poolModal = document.getElementById('poolModal');
+  
+  // Крестик просто возвращает на шаг назад
   if (closePoolModalBtn) {
-    closePoolModalBtn.addEventListener('click', closePoolModal);
+    closePoolModalBtn.onclick = function() {
+      window.history.back();
+    };
   }
+  
+  // Закрытие по клику на фон
   if (poolModal) {
-    poolModal.addEventListener('click', (e) => {
-      if (e.target.id === 'poolModal') {
+    poolModal.onclick = function(e) {
+      if (e.target === poolModal) {
         closePoolModal();
       }
-    });
+    };
+    
+    // Предотвращаем закрытие при клике на содержимое
+    const poolModalContent = poolModal.querySelector('.pool-modal-content');
+    if (poolModalContent) {
+      poolModalContent.onclick = function(e) {
+        e.stopPropagation();
+      };
+    }
   }
   
   // Обработчики для модального окна пары пулов
@@ -1255,6 +1918,8 @@ async function connectPhantom() {
     
     // Загружаем позиции пользователя
     await loadUserPositions();
+    // Загружаем позиции в основной секции
+    await loadPositions();
     // Обновляем статистику
     await updateAdminStats();
 
@@ -1295,6 +1960,8 @@ async function handleWalletDisconnect() {
   if (positionsList) {
     positionsList.innerHTML = '<p style="color: rgba(255, 255, 255, 0.7);">Подключите кошелек для просмотра позиций</p>';
   }
+  // Обновляем позиции в основной секции (покажем тестовые данные)
+  loadPositions();
   // Сбрасываем статистику
   await updateAdminStats();
 }
@@ -1571,13 +2238,20 @@ async function openPoolModal(poolAddress) {
   const errorEl = document.getElementById('poolModalError');
   
   modal.classList.add('show');
-  loadingEl.style.display = 'block';
-  contentEl.style.display = 'none';
+  loadingEl.style.display = 'none';
+  contentEl.style.display = 'block';
   errorEl.style.display = 'none';
   
-  // Загружаем настройки пула
+  // Сбрасываем форму
+  const form = document.getElementById('openPositionForm');
+  if (form) {
+    form.reset();
+  }
+  
+  // Загружаем настройки пула (для внутренней логики)
   await loadPoolSettings(poolAddress);
   
+  // Загружаем минимальные данные пула для расчета позиции
   try {
     const response = await fetch(`/api/pool/${poolAddress}`);
     if (!response.ok) {
@@ -1586,208 +2260,43 @@ async function openPoolModal(poolAddress) {
     
     const poolData = await response.json();
     
-    // Логируем полную структуру данных для отладки
-    console.log('Full pool data from API:', poolData);
-    console.log('Pool data structure:', {
-      name: poolData.name,
-      tokenX: poolData.tokenX,
-      tokenY: poolData.tokenY,
-      token_x: poolData.token_x,
-      token_y: poolData.token_y,
-      tokenXMint: poolData.tokenXMint,
-      tokenYMint: poolData.tokenYMint,
-      base_mint: poolData.base_mint,
-      quote_mint: poolData.quote_mint,
-      volumeHistory: poolData.volumeHistory,
-      volume_history: poolData.volume_history,
-      volume: poolData.volume,
-      trade_volume_24h: poolData.trade_volume_24h
-    });
+    // Сохраняем минимальные данные для создания позиции
+    const price = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 0);
+    currentPoolPrice = price;
     
-    // Заполняем информацию о пуле
-    document.getElementById('poolDetailName').textContent = poolData.name || 'Unknown Pool';
-    document.getElementById('poolDetailAddress').textContent = poolData.address || poolAddress;
-    
-    // Заполняем мета-информацию (теги, launchpad, дата создания)
-    const metaEl = document.getElementById('poolDetailMeta');
-    metaEl.innerHTML = '';
-    
-    if (poolData.is_verified) {
-      metaEl.innerHTML += '<span class="pool-verified">✓ Verified</span>';
-    }
-    
-    if (poolData.tags && Array.isArray(poolData.tags) && poolData.tags.length > 0) {
-      poolData.tags.forEach(tag => {
-        if (tag.toLowerCase() === 'lfg') {
-          metaEl.innerHTML += '<span style="background: #ff6b6b; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold;">LFG</span>';
-        } else {
-          metaEl.innerHTML += `<span style="background: rgba(102, 126, 234, 0.3); color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85em;">${tag}</span>`;
-        }
-      });
-    }
-    
-    if (poolData.launchpad) {
-      metaEl.innerHTML += `<span style="background: #667eea; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold;">🚀 ${poolData.launchpad}</span>`;
-    }
-    
-    if (poolData.created_at) {
-      const createdAt = new Date(poolData.created_at).toLocaleDateString('ru-RU', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
-      metaEl.innerHTML += `<span style="color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">📅 ${createdAt}</span>`;
-    }
-    
-    // Заполняем статистику
     const binStep = poolData.bin_step || poolData.binStep || poolData.binStepValue || null;
-    // Пробуем разные варианты названий поля activeBin
     const activeBin = poolData.active_bin || poolData.activeBin || poolData.activeBinId || 
                       poolData.current_bin || poolData.currentBin || 
                       (poolData.activeBinData && poolData.activeBinData.binId) || null;
     
-    console.log('[PoolData] ActiveBin search:', {
-      active_bin: poolData.active_bin,
-      activeBin: poolData.activeBin,
-      activeBinId: poolData.activeBinId,
-      current_bin: poolData.current_bin,
-      currentBin: poolData.currentBin,
-      activeBinData: poolData.activeBinData,
-      found: activeBin
-    });
-    
-    document.getElementById('poolDetailBinStep').textContent = binStep || '-';
-    document.getElementById('poolDetailActiveBin').textContent = activeBin || '-';
-    
-    // Сохраняем данные пула для расчета диапазона цен
     currentPoolBinStep = binStep ? parseInt(binStep) : null;
     currentPoolActiveBin = activeBin !== null && activeBin !== undefined ? parseInt(activeBin) : null;
     
-    const price = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 0);
-    currentPoolPrice = price; // Сохраняем цену для использования в автобалансе
-    document.getElementById('poolDetailPrice').textContent = price > 0 ? '$' + price.toFixed(6) : '-';
+    // Получаем mint адреса токенов
+    const tokenXMint = poolData.tokenXMint || poolData.token_x_mint || poolData.mint_x || poolData.base_mint;
+    const tokenYMint = poolData.tokenYMint || poolData.token_y_mint || poolData.mint_y || poolData.quote_mint;
     
-    // Обновляем диапазон цен при загрузке пула
-    updatePositionPriceRange();
-    
-    const liquidity = parseFloat(poolData.liquidity || poolData.tvl || 0);
-    document.getElementById('poolDetailTVL').textContent = formatCurrency(liquidity);
-    
-    const volume24h = parseFloat(poolData.trade_volume_24h || poolData.volume?.hour_24 || 0);
-    document.getElementById('poolDetailVolume24h').textContent = formatCurrency(volume24h);
-    
-    const volume7d = parseFloat(poolData.volume?.hour_168 || poolData.volume_7d || 0);
-    document.getElementById('poolDetailVolume7d').textContent = volume7d > 0 ? formatCurrency(volume7d) : '-';
-    
-    const fees24h = parseFloat(poolData.fees_24h || poolData.fees?.hour_24 || 0);
-    document.getElementById('poolDetailFees24h').textContent = formatCurrency(fees24h);
-    
-    const fees7d = parseFloat(poolData.fees?.hour_168 || poolData.fees_7d || 0);
-    document.getElementById('poolDetailFees7d').textContent = fees7d > 0 ? formatCurrency(fees7d) : '-';
-    
-    document.getElementById('poolDetailBaseFee').textContent = formatPercent(parseFloat(poolData.base_fee_percentage || poolData.baseFee || poolData.base_fee_bps || 0));
-    document.getElementById('poolDetailMaxFee').textContent = formatPercent(parseFloat(poolData.max_fee_percentage || poolData.maxFee || poolData.max_fee_bps || 10));
-    document.getElementById('poolDetailProtocolFee').textContent = formatPercent(parseFloat(poolData.protocol_fee_percentage || poolData.protocolFee || poolData.protocol_fee_bps || 0));
-    document.getElementById('poolDetailDynamicFee').textContent = formatPercent(parseFloat(poolData.dynamic_fee_percentage || poolData.dynamicFee || 0));
-    
-    const feeTvlRatio = parseFloat(poolData.fee_tvl_ratio?.hour_24 || poolData.fee_tvl_ratio || 0) * 100;
-    document.getElementById('poolDetailFeeTvl').textContent = feeTvlRatio > 0 ? formatPercent(feeTvlRatio) : '-';
-    
-    const apr = parseFloat(poolData.apr || 0);
-    document.getElementById('poolDetailAPR').textContent = apr > 0 ? formatPercent(apr) : '-';
-    
-    const apy = parseFloat(poolData.apy || 0);
-    document.getElementById('poolDetailAPY').textContent = apy > 0 ? formatPercent(apy) : '-';
-    
-    const reserveX = parseFloat(poolData.reserveX || poolData.reserve_x || poolData.tokenX?.reserve || poolData.token_x?.reserve || 0);
-    document.getElementById('poolDetailReserveX').textContent = reserveX > 0 ? formatNumber(reserveX) : '-';
-    
-    const reserveY = parseFloat(poolData.reserveY || poolData.reserve_y || poolData.tokenY?.reserve || poolData.token_y?.reserve || 0);
-    document.getElementById('poolDetailReserveY').textContent = reserveY > 0 ? formatNumber(reserveY) : '-';
-    
-    // Дополнительные метрики
-    const transactionCount = parseFloat(poolData.transaction_count || poolData.tx_count || poolData.trades_count || 0);
-    const avgTradeSize = transactionCount > 0 && volume24h > 0 ? volume24h / transactionCount : 0;
-    document.getElementById('poolDetailAvgTradeSize').textContent = avgTradeSize > 0 ? formatCurrency(avgTradeSize) : '-';
-    
-    const volumeTvlRatio = liquidity > 0 ? (volume24h / liquidity) * 100 : 0;
-    document.getElementById('poolDetailVolumeTvlRatio').textContent = volumeTvlRatio > 0 ? formatPercent(volumeTvlRatio) : '-';
-    
-    const feesVolumeRatio = volume24h > 0 ? (fees24h / volume24h) * 100 : 0;
-    document.getElementById('poolDetailFeesVolumeRatio').textContent = feesVolumeRatio > 0 ? formatPercent(feesVolumeRatio) : '-';
-    
-    const reserveXValue = reserveX > 0 && price > 0 ? reserveX * price : 0;
-    document.getElementById('poolDetailReserveXValue').textContent = reserveXValue > 0 ? formatCurrency(reserveXValue) : '-';
-    
-    const reserveYValue = reserveY > 0 ? reserveY : 0; // Предполагаем, что Y - это stablecoin или quote token
-    document.getElementById('poolDetailReserveYValue').textContent = reserveYValue > 0 ? formatCurrency(reserveYValue) : '-';
-    
-    const totalReservesValue = reserveXValue + reserveYValue;
-    document.getElementById('poolDetailTotalReservesValue').textContent = totalReservesValue > 0 ? formatCurrency(totalReservesValue) : '-';
-    
-    // Получаем названия токенов - пробуем разные варианты
+    // Получаем названия токенов
     let tokenXName = poolData.tokenX?.symbol || poolData.token_x?.symbol || 
                      poolData.tokenX?.name || poolData.token_x?.name ||
                      poolData.baseToken?.symbol || poolData.base_token?.symbol ||
-                     poolData.baseToken?.name || poolData.base_token?.name ||
-                     poolData.token0?.symbol || poolData.token_0?.symbol ||
-                     poolData.token0?.name || poolData.token_0?.name;
-    
+                     'Token X';
     let tokenYName = poolData.tokenY?.symbol || poolData.token_y?.symbol ||
                      poolData.tokenY?.name || poolData.token_y?.name ||
                      poolData.quoteToken?.symbol || poolData.quote_token?.symbol ||
-                     poolData.quoteToken?.name || poolData.quote_token?.name ||
-                     poolData.token1?.symbol || poolData.token_1?.symbol ||
-                     poolData.token1?.name || poolData.token_1?.name;
+                     'Token Y';
     
-    // Если не нашли, пытаемся извлечь из имени пула (формат: "TOKEN1-TOKEN2", "TOKEN1/TOKEN2", "TOKEN1 TOKEN2")
+    // Если не нашли, пытаемся извлечь из имени пула
     if (!tokenXName || !tokenYName) {
       const poolName = poolData.name || '';
-      // Пробуем разные форматы: "TRUMP-USDC", "SOL/USDC", "TRUMP USDC"
-      const nameMatch = poolName.match(/^([A-Z0-9]+)[\s\-/]+([A-Z0-9]+)/i) || 
-                        poolName.match(/^([A-Za-z0-9]+)[\s\-/]+([A-Za-z0-9]+)/i);
+      const nameMatch = poolName.match(/^([A-Z0-9]+)[\s\-/]+([A-Z0-9]+)/i);
       if (nameMatch && nameMatch.length >= 3) {
         if (!tokenXName) tokenXName = nameMatch[1].toUpperCase();
         if (!tokenYName) tokenYName = nameMatch[2].toUpperCase();
       }
     }
     
-    // Если все еще не нашли, пробуем получить из списка токенов (если доступен)
-    if ((!tokenXName || tokenXName === 'Token X' || tokenXName.length < 2) && window.tokenIndexByAddress) {
-      const mintX = poolData.tokenXMint || poolData.token_x_mint || poolData.base_mint;
-      if (mintX) {
-        const tokenX = window.tokenIndexByAddress.get(String(mintX));
-        if (tokenX && (tokenX.symbol || tokenX.name)) {
-          tokenXName = tokenX.symbol || tokenX.name;
-        }
-      }
-    }
-    
-    if ((!tokenYName || tokenYName === 'Token Y' || tokenYName.length < 2) && window.tokenIndexByAddress) {
-      const mintY = poolData.tokenYMint || poolData.token_y_mint || poolData.quote_mint;
-      if (mintY) {
-        const tokenY = window.tokenIndexByAddress.get(String(mintY));
-        if (tokenY && (tokenY.symbol || tokenY.name)) {
-          tokenYName = tokenY.symbol || tokenY.name;
-        }
-      }
-    }
-    
-    // Последняя попытка - используем mint адреса (первые 4 символа)
-    if (!tokenXName || tokenXName === 'Token X') {
-      tokenXName = poolData.tokenXMint?.substring(0, 4).toUpperCase() || poolData.token_x_mint?.substring(0, 4).toUpperCase() || 'Token X';
-    }
-    if (!tokenYName || tokenYName === 'Token Y') {
-      tokenYName = poolData.tokenYMint?.substring(0, 4).toUpperCase() || poolData.token_y_mint?.substring(0, 4).toUpperCase() || 'Token Y';
-    }
-    
-    const currentPrice = parseFloat(poolData.price || poolData.current_price || poolData.price_usd || 1);
-    
-    // Получаем mint адреса токенов (пробуем разные варианты названий полей)
-    const tokenXMint = poolData.tokenXMint || poolData.token_x_mint || poolData.mint_x || poolData.base_mint;
-    const tokenYMint = poolData.tokenYMint || poolData.token_y_mint || poolData.mint_y || poolData.quote_mint;
-    
-    // Сохраняем информацию о токенах для конвертации
+    // Сохраняем информацию о токенах
     currentPoolTokenX = {
       mint: tokenXMint,
       symbol: tokenXName,
@@ -1798,68 +2307,6 @@ async function openPoolModal(poolAddress) {
       symbol: tokenYName,
       decimals: getTokenDecimalsForPool(tokenYMint)
     };
-    
-    // Обновляем подсказки для полей ввода
-    const tokenXHint = document.getElementById('positionTokenXHint');
-    const tokenYHint = document.getElementById('positionTokenYHint');
-    if (tokenXHint) {
-      tokenXHint.textContent = `Введите количество в единицах ${tokenXName} (например, 1 для 1 ${tokenXName})`;
-    }
-    if (tokenYHint) {
-      tokenYHint.textContent = `Введите количество в единицах ${tokenYName} (например, 100 для 100 ${tokenYName})`;
-    }
-    
-    // Логируем найденные названия токенов с отладкой decimals
-    console.log('Found token names:', { 
-      tokenXName, 
-      tokenYName, 
-      tokenXMint, 
-      tokenYMint, 
-      decimalsX: currentPoolTokenX.decimals, 
-      decimalsY: currentPoolTokenY.decimals,
-      tokenYMintSources: {
-        tokenYMint: poolData.tokenYMint,
-        token_y_mint: poolData.token_y_mint,
-        mint_y: poolData.mint_y,
-        quote_mint: poolData.quote_mint
-      }
-    });
-    
-    document.getElementById('legendTokenX').textContent = tokenXName;
-    document.getElementById('legendTokenY').textContent = tokenYName;
-    document.getElementById('liquidityPairInfo').textContent = `${currentPrice.toFixed(2)} ${tokenXName}/${tokenYName}`;
-    
-    // Создаем график распределения ликвидности
-    if (poolData.liquidityDistribution && (poolData.liquidityDistribution.bins || poolData.liquidityDistribution)) {
-      const bins = poolData.liquidityDistribution.bins || poolData.liquidityDistribution;
-      createLiquidityChart(bins, tokenXName, tokenYName, currentPrice);
-    } else if (poolData.bins && Array.isArray(poolData.bins)) {
-      createLiquidityChart(poolData.bins, tokenXName, tokenYName, currentPrice);
-    } else {
-      // Если нет данных о bins, создаем график на основе доступных данных
-      createLiquidityChartFromPoolData(poolData, tokenXName, tokenYName, currentPrice);
-    }
-    
-    // Создаем график торгового объема
-    createTradingVolumeChart(poolData);
-    
-    // Создаем график комиссий
-    createFeesChart(poolData);
-    
-    // Создаем график TVL
-    createTVLChart(poolData);
-    
-    // Создаем график Fee/TVL
-    createFeeTvlChart(poolData);
-    
-    // Создаем сравнительный график объемов
-    createVolumeComparisonChart(poolData);
-    
-    // Создаем график распределения резервов
-    createReservesChart(poolData, tokenXName, tokenYName);
-    
-    loadingEl.style.display = 'none';
-    contentEl.style.display = 'block';
   } catch (error) {
     console.error('Error loading pool details:', error);
     loadingEl.style.display = 'none';
@@ -1870,7 +2317,9 @@ async function openPoolModal(poolAddress) {
 
 function closePoolModal() {
   const modal = document.getElementById('poolModal');
+  if (modal) {
   modal.classList.remove('show');
+  }
   
   // Очищаем информацию о токенах
   currentPoolAddress = null;
@@ -1918,6 +2367,30 @@ function closePoolModal() {
 }
 
 // Открытие модального окна со списком пулов для пары токенов
+// Новая функция для открытия модального окна с готовыми пулами
+function openPairPoolsModalWithPools(pools, tokenXName, tokenYName) {
+  const modal = document.getElementById('pairPoolsModal');
+  const loadingEl = document.getElementById('pairPoolsModalLoading');
+  const contentEl = document.getElementById('pairPoolsModalContent');
+  const errorEl = document.getElementById('pairPoolsModalError');
+  const containerEl = document.getElementById('pairPoolsContainer');
+  
+  modal.classList.add('show');
+  loadingEl.style.display = 'none';
+  contentEl.style.display = 'block';
+  errorEl.style.display = 'none';
+  containerEl.innerHTML = '';
+  
+  console.log('Открываем модальное окно с пулами:', { poolsCount: pools.length, tokenXName, tokenYName });
+  
+  // Обновляем заголовок
+  document.getElementById('pairPoolsModalTitle').textContent = `Пулы для пары: ${tokenXName} / ${tokenYName}`;
+  document.getElementById('pairPoolsCount').textContent = `Найдено пулов: ${pools.length}`;
+  
+  // Рендерим пулы
+  renderPairPools(pools, containerEl);
+}
+
 async function openPairPoolsModal(tokenXMint, tokenYMint) {
   const modal = document.getElementById('pairPoolsModal');
   const loadingEl = document.getElementById('pairPoolsModalLoading');
@@ -1954,15 +2427,30 @@ async function openPairPoolsModal(tokenXMint, tokenYMint) {
                    tokenYMint.substring(0, 8) + '...';
     }
     
-    // Обновляем заголовок
-    document.getElementById('pairPoolsModalTitle').textContent = `Пулы для пары: ${tokenXName} / ${tokenYName}`;
-    document.getElementById('pairPoolsCount').textContent = `Найдено пулов: ${pools.length}`;
-    
+    // Используем новую функцию для отображения
+    openPairPoolsModalWithPools(pools, tokenXName, tokenYName);
+  } catch (error) {
+    console.error('Error loading pools for pair:', error);
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'block';
+    errorEl.textContent = 'Ошибка загрузки пулов: ' + error.message;
+  }
+}
+
+// Продолжение функции openPairPoolsModalWithPools
+function renderPairPools(pools, containerEl) {
     // Отображаем пулы
     if (pools.length === 0) {
       containerEl.innerHTML = '<div style="text-align: center; padding: 40px; color: rgba(255, 255, 255, 0.7);">Пулы для этой пары не найдены</div>';
     } else {
-      containerEl.innerHTML = pools.map(pool => {
+      // Сортируем пулы по bin step перед отображением
+      const sortedPools = [...pools].sort((a, b) => {
+        const binStepA = parseInt(a.bin_step || a.binStep || 0);
+        const binStepB = parseInt(b.bin_step || b.binStep || 0);
+        return binStepA - binStepB;
+      });
+      
+      containerEl.innerHTML = sortedPools.map(pool => {
         const liquidity = parseFloat(pool.liquidity || 0);
         const volume24h = parseFloat(pool.trade_volume_24h || pool.volume?.hour_24 || 0);
         const fees24h = parseFloat(pool.fees_24h || pool.fees?.hour_24 || 0);
@@ -1987,140 +2475,80 @@ async function openPairPoolsModal(tokenXMint, tokenYMint) {
         const createdAt = pool.created_at ? new Date(pool.created_at).toLocaleDateString('ru-RU') : '-';
         
         return `
-          <div class="pair-pool-card" data-pool-address="${pool.address}" style="cursor: pointer;">
-            <div class="pair-pool-header">
-              <div class="pair-pool-name">${pool.name || 'Unknown Pool'}</div>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                ${pool.is_verified ? '<span class="pool-verified">✓ Verified</span>' : ''}
-                ${pool.tags?.includes('lfg') ? '<span style="background: #ff6b6b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; font-weight: bold;">LFG</span>' : ''}
-                ${pool.launchpad ? `<span style="background: #667eea; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; font-weight: bold;">${pool.launchpad}</span>` : ''}
+          <div class="bin-step-card" data-pool-address="${pool.address}">
+            <div class="bin-step-header">
+              <div class="bin-step-badge">
+                <span class="bin-step-label">Bin Step</span>
+                <span class="bin-step-number">${binStep}</span>
               </div>
+              <div class="bin-step-tags">
+                ${pool.is_verified ? '<span class="tag-verified">✓</span>' : ''}
+                ${pool.tags?.includes('lfg') ? '<span class="tag-lfg">LFG</span>' : ''}
+                ${pool.launchpad ? `<span class="tag-launchpad">${pool.launchpad}</span>` : ''}
             </div>
-            <div class="pair-pool-address">${pool.address}</div>
-            
-            <!-- Основные метрики -->
-            <div class="pair-pool-section-title">Основные метрики</div>
-            <div class="pair-pool-info">
-              <div class="pair-pool-info-item">
-                <span class="pair-pool-info-label">Bin Step</span>
-                <span class="pair-pool-info-value">${binStep}</span>
-              </div>
-              <div class="pair-pool-info-item">
-                <span class="pair-pool-info-label">Активный Bin</span>
-                <span class="pair-pool-info-value">${activeBin}</span>
-              </div>
-              <div class="pair-pool-info-item">
-                <span class="pair-pool-info-label">Ликвидность (TVL)</span>
-                <span class="pair-pool-info-value">${formatCurrency(liquidity)}</span>
-              </div>
-              ${price > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">Текущая цена</span>
-                  <span class="pair-pool-info-value">$${price.toFixed(6)}</span>
-                </div>
-              ` : ''}
             </div>
             
-            <!-- Объем и комиссии -->
-            <div class="pair-pool-section-title">Объем и комиссии</div>
-            <div class="pair-pool-info">
-              <div class="pair-pool-info-item">
-                <span class="pair-pool-info-label">Объем 24ч</span>
-                <span class="pair-pool-info-value">${formatCurrency(volume24h)}</span>
+            <div class="bin-step-address">${pool.address}</div>
+            
+            <div class="bin-step-metrics">
+              <div class="metric-primary">
+                <div class="metric-row">
+                  <span class="metric-icon">💰</span>
+                  <div class="metric-content">
+                    <span class="metric-label">TVL</span>
+                    <span class="metric-value">${formatCurrency(liquidity)}</span>
               </div>
-              ${volume7d > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">Объем 7д</span>
-                  <span class="pair-pool-info-value">${formatCurrency(volume7d)}</span>
                 </div>
-              ` : ''}
-              <div class="pair-pool-info-item">
-                <span class="pair-pool-info-label">Комиссии 24ч</span>
-                <span class="pair-pool-info-value">${formatCurrency(fees24h)}</span>
+                ${(apr > 0 || apy > 0) ? `
+                  <div class="metric-row highlight">
+                    <span class="metric-icon">📈</span>
+                    <div class="metric-content">
+                      <span class="metric-label">APR / APY</span>
+                      <span class="metric-value apr-value">${formatPercent(apr)} / ${formatPercent(apy)}</span>
               </div>
-              ${fees7d > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">Комиссии 7д</span>
-                  <span class="pair-pool-info-value">${formatCurrency(fees7d)}</span>
-                </div>
-              ` : ''}
-              ${feeTvlRatio > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">Fee/TVL 24ч</span>
-                  <span class="pair-pool-info-value">${formatPercent(feeTvlRatio)}</span>
                 </div>
               ` : ''}
             </div>
             
-            <!-- Комиссии и доходность -->
-            <div class="pair-pool-section-title">Комиссии и доходность</div>
-            <div class="pair-pool-info">
-              <div class="pair-pool-info-item">
-                <span class="pair-pool-info-label">Базовая комиссия</span>
-                <span class="pair-pool-info-value">${formatPercent(baseFee)}</span>
+              <div class="metric-grid">
+                <div class="metric-item">
+                  <span class="metric-label">Vol 24h</span>
+                  <span class="metric-value">${formatCurrency(volume24h)}</span>
               </div>
-              ${maxFee > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">Макс. комиссия</span>
-                  <span class="pair-pool-info-value">${formatPercent(maxFee)}</span>
+                <div class="metric-item">
+                  <span class="metric-label">Fees 24h</span>
+                  <span class="metric-value">${formatCurrency(fees24h)}</span>
+                </div>
+                ${price > 0 ? `
+                  <div class="metric-item">
+                    <span class="metric-label">Price</span>
+                    <span class="metric-value">$${price.toFixed(6)}</span>
                 </div>
               ` : ''}
-              ${protocolFee > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">Протокол комиссия</span>
-                  <span class="pair-pool-info-value">${formatPercent(protocolFee)}</span>
+                <div class="metric-item">
+                  <span class="metric-label">Base Fee</span>
+                  <span class="metric-value">${formatPercent(baseFee)}</span>
+                </div>
+                ${activeBin !== '-' ? `
+                  <div class="metric-item">
+                    <span class="metric-label">Active Bin</span>
+                    <span class="metric-value">${activeBin}</span>
                 </div>
               ` : ''}
-              ${dynamicFee > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">Динамическая комиссия</span>
-                  <span class="pair-pool-info-value">${formatPercent(dynamicFee)}</span>
-                </div>
-              ` : ''}
-              ${apr > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">APR</span>
-                  <span class="pair-pool-info-value" style="color: #4CAF50; font-weight: bold;">${formatPercent(apr)}</span>
-                </div>
-              ` : ''}
-              ${apy > 0 ? `
-                <div class="pair-pool-info-item">
-                  <span class="pair-pool-info-label">APY</span>
-                  <span class="pair-pool-info-value" style="color: #4CAF50; font-weight: bold;">${formatPercent(apy)}</span>
+                ${feeTvlRatio > 0 ? `
+                  <div class="metric-item">
+                    <span class="metric-label">Fee/TVL 24h</span>
+                    <span class="metric-value">${formatPercent(feeTvlRatio)}</span>
                 </div>
               ` : ''}
             </div>
-            
-            <!-- Резервы токенов -->
-            ${(reserveX > 0 || reserveY > 0) ? `
-              <div class="pair-pool-section-title">Резервы токенов</div>
-              <div class="pair-pool-info">
-                ${reserveX > 0 ? `
-                  <div class="pair-pool-info-item">
-                    <span class="pair-pool-info-label">Резерв Token X</span>
-                    <span class="pair-pool-info-value">${formatNumber(reserveX)}</span>
                   </div>
-                ` : ''}
-                ${reserveY > 0 ? `
-                  <div class="pair-pool-info-item">
-                    <span class="pair-pool-info-label">Резерв Token Y</span>
-                    <span class="pair-pool-info-value">${formatNumber(reserveY)}</span>
-                  </div>
-                ` : ''}
-              </div>
-            ` : ''}
-            
-            ${createdAt !== '-' ? `
-              <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">
-                Создан: ${createdAt}
-              </div>
-            ` : ''}
           </div>
         `;
       }).join('');
       
-      // Добавляем обработчики клика на карточки пулов
-      containerEl.querySelectorAll('.pair-pool-card').forEach(card => {
+      // Добавляем обработчики клика на карточки bin steps
+      containerEl.querySelectorAll('.bin-step-card').forEach(card => {
         card.addEventListener('click', () => {
           const address = card.getAttribute('data-pool-address');
           if (address) {
@@ -2129,15 +2557,6 @@ async function openPairPoolsModal(tokenXMint, tokenYMint) {
           }
         });
       });
-    }
-    
-    loadingEl.style.display = 'none';
-    contentEl.style.display = 'block';
-  } catch (error) {
-    console.error('Error loading pair pools:', error);
-    loadingEl.style.display = 'none';
-    errorEl.textContent = 'Ошибка загрузки пулов: ' + error.message;
-    errorEl.style.display = 'block';
   }
 }
 
@@ -2634,54 +3053,41 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      const strategy = document.getElementById('positionStrategy').value;
-      const rangeInterval = parseInt(document.getElementById('positionRangeInterval').value);
-      const tokenXAmountInput = document.getElementById('positionTokenXAmount').value;
-      const tokenYAmountInput = document.getElementById('positionTokenYAmount').value;
+      // Получаем общую сумму из инпута
+      const totalAmountInput = document.getElementById('positionTotalAmount')?.value;
       
-      // Отладочный вывод перед валидацией
-      console.log('[DEBUG] Form submission - input values:', {
-        tokenXAmountInput,
-        tokenYAmountInput,
-        tokenXAmountInputParsed: parseFloat(tokenXAmountInput),
-        tokenYAmountInputParsed: parseFloat(tokenYAmountInput),
-      });
-      
-      // Валидация входных данных
-      if (!strategy || !['balance', 'imbalance', 'oneSide'].includes(strategy)) {
-        showPositionStatus('Выберите корректную стратегию', 'error');
+      if (!totalAmountInput || parseFloat(totalAmountInput) <= 0) {
+        showPositionStatus('Введите общую сумму позиции в USD', 'error');
         return;
       }
       
-      if (!rangeInterval || rangeInterval < 1 || rangeInterval > 100) {
-        showPositionStatus('Диапазон должен быть от 1 до 100', 'error');
+      const totalAmountUSD = parseFloat(totalAmountInput);
+      
+      // Проверяем наличие данных о пуле
+      if (!currentPoolTokenX || !currentPoolTokenY || !currentPoolPrice || currentPoolPrice <= 0) {
+        showPositionStatus('Ошибка: информация о пуле не загружена', 'error');
         return;
       }
       
-      if (!tokenXAmountInput || parseFloat(tokenXAmountInput) <= 0) {
-        showPositionStatus('Количество Token X должно быть больше 0', 'error');
-        return;
-      }
+      // Рассчитываем баланс 50/50
+      // Для баланса 50/50: половина суммы в USD идет на Token X, половина на Token Y
+      const tokenXAmountUSD = totalAmountUSD / 2;
+      const tokenYAmountUSD = totalAmountUSD / 2;
       
-      // Для oneSide стратегии tokenYAmount может быть 0
-      if (tokenYAmountInput === undefined || tokenYAmountInput === '') {
-        showPositionStatus('Введите количество Token Y (может быть 0 для односторонней позиции)', 'error');
-        return;
-      }
+      // Конвертируем USD в количество токенов
+      // Token X: количество = USD / цена
+      const tokenXAmountInput = (tokenXAmountUSD / currentPoolPrice).toFixed(9);
+      // Token Y: количество = USD (предполагаем, что Y - это stablecoin или 1:1 с USD)
+      const tokenYAmountInput = tokenYAmountUSD.toFixed(9);
       
-      if (strategy !== 'oneSide' && parseFloat(tokenYAmountInput) <= 0) {
-        showPositionStatus('Количество Token Y должно быть больше 0 для выбранной стратегии', 'error');
-        return;
-      }
+      // Используем стратегию balance по умолчанию
+      const strategy = 'balance';
+      // Используем диапазон 10 по умолчанию
+      const rangeInterval = 10;
       
       // Конвертируем из обычных единиц в минимальные единицы
-      if (!currentPoolTokenX || !currentPoolTokenY) {
-        showPositionStatus('Ошибка: информация о токенах пула не загружена', 'error');
-        return;
-      }
-      
       const tokenXAmount = convertToSmallestUnits(tokenXAmountInput, currentPoolTokenX.decimals).toString();
-      const tokenYAmount = convertToSmallestUnits(tokenYAmountInput || '0', currentPoolTokenY.decimals).toString();
+      const tokenYAmount = convertToSmallestUnits(tokenYAmountInput, currentPoolTokenY.decimals).toString();
       
       // Отладочный вывод после конвертации
       console.log('[DEBUG] After conversion to smallest units:', {
@@ -3151,8 +3557,8 @@ function createTradingVolumeChart(poolData) {
   // Вариант 3: volume как объект с периодами времени (min_30, hour_1 и т.д.) из API
   if (!foundData && poolData.volume && typeof poolData.volume === 'object' && !Array.isArray(poolData.volume)) {
     console.log('Volume object found, checking structure...');
-    console.log('Volume object structure:', poolData.volume);
     console.log('Volume object keys:', Object.keys(poolData.volume));
+    console.log('Volume object full data:', JSON.stringify(poolData.volume, null, 2));
     
     const volumeKeys = Object.keys(poolData.volume);
     
@@ -3209,15 +3615,15 @@ function createTradingVolumeChart(poolData) {
         });
       
       sortedKeys.forEach(key => {
-        const vol = parseFloat(poolData.volume[key] || 0);
-        if (vol > 0) {
+        const rawValue = poolData.volume[key];
+        const vol = parseFloat(rawValue || 0);
+        console.log(`  Volume [${key}]: raw=${rawValue}, parsed=${vol}`);
           labels.push(formatPeriodLabel(key));
           volumeData.push(vol);
-        }
       });
       
-      foundData = labels.length > 0;
-      console.log('Added volume data by periods:', { labels, volumeData });
+      foundData = labels.length > 0 && volumeData.some(v => v > 0);
+      console.log('Added volume data by periods:', { labels, volumeData, hasNonZero: foundData });
     } else {
       // Пытаемся найти ключи, которые выглядят как даты
       const dateKeys = volumeKeys.filter(key => {
@@ -4411,7 +4817,7 @@ async function closePosition(positionAddress, poolAddress) {
 }
 
 // Загрузка позиций (для админ панели)
-async function loadPositions() {
+async function loadAdminPositions() {
   // Используем ту же функцию для загрузки позиций пользователя
   await loadUserPositions();
 }
@@ -4483,7 +4889,7 @@ function initAdminPanel() {
   }
   
   // Загружаем позиции и статистику
-  loadPositions();
+  loadAdminPositions();
   updateAdminStats();
   
   // Обновляем каждые 10 секунд
@@ -4491,7 +4897,7 @@ function initAdminPanel() {
     clearInterval(positionsRefreshInterval);
   }
   positionsRefreshInterval = setInterval(() => {
-    loadPositions();
+    loadAdminPositions();
     updateAdminStats();
     loadPoolsConfigs(); // Обновляем список пулов
   }, 10000);
@@ -4537,5 +4943,6 @@ async function loadWalletSettings() {
     console.error('Error loading wallet settings:', error);
   }
 }
+
 
 
