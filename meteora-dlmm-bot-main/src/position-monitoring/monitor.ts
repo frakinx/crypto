@@ -5,7 +5,7 @@ import { StrategyCalculator } from './strategyCalculator.js';
 import { PositionManager } from './positionManager.js';
 import { PoolSelector } from './poolSelector.js';
 import { HedgeManager } from './hedgeManager.js';
-import { loadAdminConfig, type AdminConfig } from './config.js';
+import { loadAdminConfig, getPoolConfigOrDefault, type AdminConfig } from './config.js';
 import type { PositionInfo, PositionDecision } from './types.js';
 import type { DlmmPair } from '../dex/meteora.js';
 
@@ -134,7 +134,18 @@ export class PositionMonitor {
       // Проверяем каждую позицию
       for (const position of activePositions) {
         try {
-          const decision = await this.positionManager.makeDecision(position, this.config);
+          // Получаем конфигурацию пула для этой позиции (или используем глобальную по умолчанию)
+          const poolConfig = getPoolConfigOrDefault(position.poolAddress);
+          // Объединяем конфигурацию пула с глобальной конфигурацией для создания полного AdminConfig
+          const configForPosition: AdminConfig = {
+            ...this.config,
+            stopLossPercent: poolConfig.stopLossPercent,
+            feeCheckPercent: poolConfig.feeCheckPercent,
+            takeProfitPercent: poolConfig.takeProfitPercent,
+            mirrorSwap: poolConfig.mirrorSwap,
+            averagePriceClose: poolConfig.averagePriceClose,
+          };
+          const decision = await this.positionManager.makeDecision(position, configForPosition);
           
           // Логируем решение только если это не 'none' (чтобы не засорять логи)
           if (decision.action !== 'none') {
@@ -634,7 +645,18 @@ export class PositionMonitor {
    * Запустить постоянный hedging для позиции (Mirror Swapping для дельта-нейтральности)
    */
   private async startHedgingForPosition(position: PositionInfo): Promise<void> {
-    if (!this.config.mirrorSwap.enabled) {
+    // Получаем конфигурацию пула для этой позиции
+    const poolConfig = getPoolConfigOrDefault(position.poolAddress);
+    const configForPosition: AdminConfig = {
+      ...this.config,
+      stopLossPercent: poolConfig.stopLossPercent,
+      feeCheckPercent: poolConfig.feeCheckPercent,
+      takeProfitPercent: poolConfig.takeProfitPercent,
+      mirrorSwap: poolConfig.mirrorSwap,
+      averagePriceClose: poolConfig.averagePriceClose,
+    };
+
+    if (!configForPosition.mirrorSwap.enabled) {
       return;
     }
 
@@ -655,7 +677,7 @@ export class PositionMonitor {
       }
 
       // Запускаем постоянный hedging через HedgeManager
-      this.hedgeManager.startHedging(position, this.config, positionBinData);
+      this.hedgeManager.startHedging(position, configForPosition, positionBinData);
       console.log(`Started Mirror Swapping hedging for position ${position.positionAddress}`);
     } catch (error) {
       console.error(`Error starting hedge for position ${position.positionAddress}:`, error);
@@ -667,7 +689,18 @@ export class PositionMonitor {
    * Получает актуальные данные о позиции и выполняет hedge swap
    */
   private async executeHedge(position: PositionInfo): Promise<void> {
-    if (!this.config.mirrorSwap.enabled) {
+    // Получаем конфигурацию пула для этой позиции
+    const poolConfig = getPoolConfigOrDefault(position.poolAddress);
+    const configForPosition: AdminConfig = {
+      ...this.config,
+      stopLossPercent: poolConfig.stopLossPercent,
+      feeCheckPercent: poolConfig.feeCheckPercent,
+      takeProfitPercent: poolConfig.takeProfitPercent,
+      mirrorSwap: poolConfig.mirrorSwap,
+      averagePriceClose: poolConfig.averagePriceClose,
+    };
+
+    if (!configForPosition.mirrorSwap.enabled) {
       return;
     }
 
@@ -688,7 +721,7 @@ export class PositionMonitor {
       }
 
       // Используем HedgeManager для выполнения hedge swap
-      await this.hedgeManager.executeHedge(position, this.config, positionBinData);
+      await this.hedgeManager.executeHedge(position, configForPosition, positionBinData);
     } catch (error) {
       console.error(`Error executing hedge for position ${position.positionAddress}:`, error);
     }

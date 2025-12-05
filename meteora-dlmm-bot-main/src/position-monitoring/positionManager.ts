@@ -547,6 +547,72 @@ export class PositionManager {
       };
     }
 
+    // Проверяем уровень feeCheckPercent - проверка fee vs loss на промежуточном уровне
+    // Выполняется ДО пробития нижней границы, если цена достигла уровня feeCheckPercent
+    if (!this.priceMonitor.isPriceBelowLowerBound(position, priceUpdate.price) && 
+        this.priceMonitor.isPriceAtFeeCheckLevel(position, priceUpdate.price, config.feeCheckPercent)) {
+      
+      // Получаем реальное распределение токенов по bins из позиции
+      let positionBinData: Array<{ binId: number; amountX: any; amountY: any }> | undefined;
+      try {
+        const { positionData } = await getPositionInfo(
+          this.connection,
+          position.poolAddress,
+          position.positionAddress,
+          new PublicKey(position.userAddress),
+        );
+        positionBinData = (positionData as any)?.positionBinData;
+      } catch (error) {
+        console.warn(`Failed to get position bin data for ${position.positionAddress}:`, error);
+      }
+      
+      // Получаем РЕАЛЬНЫЕ накопленные комиссии из позиции через SDK
+      const accumulatedFees = await this.strategyCalculator.getRealAccumulatedFees(
+        this.connection,
+        position,
+        priceUpdate.price,
+      );
+      
+      // Обновляем накопленные комиссии в позиции
+      position.accumulatedFees = accumulatedFees;
+
+      // Рассчитываем, перекрывают ли fee потери
+      const calculation = await this.strategyCalculator.calculateFeeVsLoss(
+        position,
+        priceUpdate.price,
+        config.stopLossPercent,
+        accumulatedFees,
+        positionBinData,
+      );
+
+      // Рассчитываем уровень проверки для логирования
+      const priceRange = position.upperBoundPrice - position.lowerBoundPrice;
+      const feeCheckPrice = position.lowerBoundPrice + (priceRange * (config.feeCheckPercent / 100));
+
+      console.log(`[BOT] 💰 Fee vs Loss check (at ${config.feeCheckPercent}% level) for position ${position.positionAddress.substring(0, 8)}...:`, {
+        accumulatedFees: `$${calculation.accumulatedFees.toFixed(2)}`,
+        estimatedLoss: `$${calculation.estimatedLoss.toFixed(2)}`,
+        netResult: `$${calculation.netResult.toFixed(2)}`,
+        shouldClose: calculation.shouldClose,
+        currentPrice: priceUpdate.price.toFixed(6),
+        feeCheckPrice: feeCheckPrice.toFixed(6),
+        lowerBound: position.lowerBoundPrice.toFixed(6),
+        stopLossPrice: (position.lowerBoundPrice * (1 + config.stopLossPercent / 100)).toFixed(6),
+      });
+
+      // Если комиссии перекрывают потери → закрываем позицию сразу
+      if (calculation.shouldClose) {
+        console.log(`[BOT] ✅ Closing position ${position.positionAddress.substring(0, 8)}... - fees cover losses at ${config.feeCheckPercent}% level`);
+        return {
+          action: 'close',
+          reason: `Fees ($${calculation.accumulatedFees.toFixed(2)}) cover losses ($${calculation.estimatedLoss.toFixed(2)}) at ${config.feeCheckPercent}% level`,
+          positionAddress: position.positionAddress,
+        };
+      }
+      // Если комиссии НЕ перекрывают потери → продолжаем мониторинг (не закрываем)
+      // Позиция останется открытой до пробития нижней границы
+    }
+
     // Проверяем пробитие пола - проверяем fee vs loss перед принятием решения
     if (this.priceMonitor.isPriceBelowLowerBound(position, priceUpdate.price)) {
       console.log(`[BOT] ⬇️ STOP LOSS triggered for position ${position.positionAddress.substring(0, 8)}...:`, {
@@ -598,24 +664,31 @@ export class PositionManager {
         stopLossPrice: (position.lowerBoundPrice * (1 + config.stopLossPercent / 100)).toFixed(6),
       });
 
-      if (calculation.shouldClose && config.averagePriceClose.enabled) {
-        // Комиссии перекрывают потери - НЕ закрываем сразу, а ждем возврата к средней цене
-        console.log(`[BOT] ⏳ Fees cover losses - waiting for price return to average ±${config.averagePriceClose.percentDeviation}%`);
-        position.waitingForAveragePriceClose = true;
-        this.storage.savePosition(position);
-        // Не закрываем позицию, продолжаем мониторинг
-        return {
-          action: 'none',
-          reason: `Fees cover losses - waiting for price return to average price ±${config.averagePriceClose.percentDeviation}%`,
-          positionAddress: position.positionAddress,
-        };
-      } else if (!calculation.shouldClose) {
-        // Комиссии НЕ перекрывают потери - открываем новую позицию ниже
-        // ВАЖНО: Старая позиция НЕ закрывается - она остается в мониторинге на случай возврата цены вверх
-        console.log(`[BOT] 📍 Opening new position below - fees don't cover losses (keeping old position active)`);
+      // Если комиссии ≥ потерь → закрываем позицию сразу при пробитии нижней границы и открываем новую ниже
+      if (calculation.shouldClose) {
+        console.log(`[BOT] ✅ Fees cover losses - closing position ${position.positionAddress.substring(0, 8)}... and opening new one below`);
         return {
           action: 'open_new',
-          reason: `Fees ($${calculation.accumulatedFees.toFixed(2)}) don't cover losses ($${calculation.estimatedLoss.toFixed(2)}) - opening new position below`,
+          reason: `Fees ($${calculation.accumulatedFees.toFixed(2)}) cover losses ($${calculation.estimatedLoss.toFixed(2)}) - closing at lower bound and opening new position below`,
+          positionAddress: position.positionAddress,
+          newPositionParams: {
+            poolAddress: position.poolAddress,
+            rangeInterval: position.rangeInterval,
+          },
+          shouldCloseOld: true, // Закрываем старую позицию перед открытием новой
+        };
+      } else {
+        // Комиссии < потерь → НЕ закрываем позицию, открываем новую ниже и ждем возврата к средней цене
+        if (config.averagePriceClose.enabled) {
+          // Устанавливаем флаг ожидания возврата к средней цене
+          position.waitingForAveragePriceClose = true;
+          this.storage.savePosition(position);
+        }
+        
+        console.log(`[BOT] 📍 Fees don't cover losses - opening new position below (keeping old position active, ${config.averagePriceClose.enabled ? 'waiting for average price return' : 'no average price wait'})`);
+        return {
+          action: 'open_new',
+          reason: `Fees ($${calculation.accumulatedFees.toFixed(2)}) don't cover losses ($${calculation.estimatedLoss.toFixed(2)}) - opening new position below, old position ${config.averagePriceClose.enabled ? 'waiting for average price return' : 'remains active'}`,
           positionAddress: position.positionAddress,
           newPositionParams: {
             poolAddress: position.poolAddress,
@@ -623,20 +696,8 @@ export class PositionManager {
           },
           shouldCloseOld: false, // НЕ закрываем старую позицию - она остается в мониторинге
         };
-      } else {
-        // Комиссии перекрывают потери, но averagePriceClose выключен - закрываем сразу
-        console.log(`[BOT] ✅ Closing position ${position.positionAddress.substring(0, 8)}... - fees cover losses (averagePriceClose disabled)`);
-        return {
-          action: 'close',
-          reason: `Fees ($${calculation.accumulatedFees.toFixed(2)}) cover losses ($${calculation.estimatedLoss.toFixed(2)})`,
-          positionAddress: position.positionAddress,
-        };
       }
     }
-
-    // Проверка fee vs loss выполняется ТОЛЬКО когда цена пробила нижнюю границу (обработано выше)
-    // НЕ проверяем fee vs loss, если цена еще в пределах границ!
-    // Удалена проверка для случая, когда цена падает ниже initialPrice, но еще в пределах границ
 
     // Проверяем закрытие по достижении средней цены (averagePriceClose)
     // Работает ТОЛЬКО если позиция ждет возврата к средней после пробития нижней границы
