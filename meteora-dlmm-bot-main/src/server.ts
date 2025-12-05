@@ -599,21 +599,21 @@ app.post('/api/tx/send', async (req, res) => {
     
     const txBlockhash = tx.message.recentBlockhash;
     const currentBlockhashInfo = await connection.getLatestBlockhash('confirmed');
-    const blockhashAge = currentBlockhashInfo.lastValidBlockHeight - (tx.message as any).lastValidBlockHeight || 0;
     
-    // Если blockhash устарел (больше 150 слотов = ~60 секунд), отклоняем транзакцию
+    // Если blockhash не совпадает с текущим, отклоняем транзакцию
+    // Это предотвращает ошибку "Blockhash not found" при отправке
     if (txBlockhash && txBlockhash !== currentBlockhashInfo.blockhash) {
       console.warn(`[SERVER] ⚠️ Blockhash in transaction is outdated: ${txBlockhash.substring(0, 8)}... (current: ${currentBlockhashInfo.blockhash.substring(0, 8)}...)`);
       
-      // Проверяем, не слишком ли старый blockhash
-      if (blockhashAge > 150) {
-        return res.status(400).json({
-          error: 'Blockhash устарел. Пожалуйста, пересоздайте транзакцию.',
-          code: 'BLOCKHASH_EXPIRED',
-          hint: 'Транзакция была создана слишком давно. Создайте новую транзакцию и подпишите её быстрее.',
-          blockhashAge,
-        });
-      }
+      // Всегда отклоняем транзакцию с устаревшим blockhash
+      // Пользователь должен пересоздать транзакцию с актуальным blockhash
+      return res.status(400).json({
+        error: 'Blockhash устарел. Пожалуйста, пересоздайте транзакцию.',
+        code: 'BLOCKHASH_EXPIRED',
+        hint: 'Транзакция была создана слишком давно. Создайте новую транзакцию и подпишите её быстрее.',
+        oldBlockhash: txBlockhash.substring(0, 8) + '...',
+        currentBlockhash: currentBlockhashInfo.blockhash.substring(0, 8) + '...',
+      });
     }
     
     let sig: string;

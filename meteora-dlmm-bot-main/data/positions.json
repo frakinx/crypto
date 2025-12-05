@@ -942,5 +942,26 @@
       }
     ],
     "closedAt": 1764846066688
+  },
+  {
+    "positionAddress": "25pJLNpYRkZHhyHJ21kpTprURpvFsbTbLwhhYzPUVyPu",
+    "poolAddress": "BVRbyLjjfSBcoyiYFuxbgKYnWuiFaF9CSXEa5vdSZ9Hh",
+    "userAddress": "E3KJC2D4QJvG2RFeLi6qABDA2y4nUpP8fSnRxqwe7sC7",
+    "tokenXMint": "So11111111111111111111111111111111111111112",
+    "tokenYMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "initialTokenXAmount": "10480556",
+    "initialTokenYAmount": "1500000",
+    "initialPrice": 143.122182453636,
+    "upperBoundPrice": 147.4764833482076,
+    "lowerBoundPrice": 138.89644399729187,
+    "minBinId": -988,
+    "maxBinId": -958,
+    "rangeInterval": 15,
+    "status": "closed",
+    "openedAt": 1764850075370,
+    "lastPriceCheck": 1764850308934,
+    "currentPrice": 143.4084268185433,
+    "accumulatedFees": 0,
+    "closedAt": 1764850320908
   }
 ]
