@@ -134,6 +134,11 @@ export class PositionMonitor {
       // Проверяем каждую позицию
       for (const position of activePositions) {
         try {
+          // Проверяем авто-клейм комиссий
+          if (position.autoClaim?.enabled && position.status === 'active') {
+            await this.checkAndClaimFees(position);
+          }
+
           // Получаем конфигурацию пула для этой позиции (или используем глобальную по умолчанию)
           const poolConfig = getPoolConfigOrDefault(position.poolAddress);
           // Объединяем конфигурацию пула с глобальной конфигурацией для создания полного AdminConfig
@@ -143,7 +148,6 @@ export class PositionMonitor {
             feeCheckPercent: poolConfig.feeCheckPercent,
             takeProfitPercent: poolConfig.takeProfitPercent,
             mirrorSwap: poolConfig.mirrorSwap,
-            averagePriceClose: poolConfig.averagePriceClose,
           };
           const decision = await this.positionManager.makeDecision(position, configForPosition);
           
@@ -176,58 +180,55 @@ export class PositionMonitor {
 
       case 'open_new':
         console.log(`Opening new position: ${decision.reason}`);
-        console.log(`[Decision] shouldCloseOld: ${decision.shouldCloseOld}, has newPositionParams: ${!!decision.newPositionParams}`);
+        console.log(`[Decision] has newPositionParams: ${!!decision.newPositionParams}`);
         
         // Проверяем, не было ли недавно ошибки открытия позиции для этой позиции
         const lastError = this.lastOpenPositionErrors.get(position.positionAddress);
         if (lastError && Date.now() - lastError.timestamp < 60000) { // 60 секунд
-          if (lastError.error.includes('Insufficient balance') && !decision.shouldCloseOld) {
+          if (lastError.error.includes('Insufficient balance')) {
             console.warn(`[BOT] ⏭️ Skipping open_new - insufficient balance error occurred ${Math.round((Date.now() - lastError.timestamp) / 1000)}s ago. Will retry later.`);
             return; // Не пытаемся открыть позицию, если недавно была ошибка недостаточного баланса
           }
         }
         
         if (decision.newPositionParams) {
-          // Если нужно закрыть старую позицию перед открытием новой
-          if (decision.shouldCloseOld) {
-            console.log(`[BOT] 🔴 Closing old position ${decision.positionAddress.substring(0, 8)}... before opening new one`);
-            // Останавливаем hedging перед закрытием позиции
-            this.hedgeManager.stopHedging(decision.positionAddress);
-            try {
-              const closeSignature = await this.positionManager.closePosition(
+          // Всегда закрываем старую позицию перед открытием новой
+          console.log(`[BOT] 🔴 Closing old position ${decision.positionAddress.substring(0, 8)}... before opening new one`);
+          // Останавливаем hedging перед закрытием позиции
+          this.hedgeManager.stopHedging(decision.positionAddress);
+          try {
+            const closeSignature = await this.positionManager.closePosition(
               decision.positionAddress,
               decision.reason.split(' - ')[0] || 'Closing before opening new position',
             );
-              
-              if (!closeSignature) {
-                console.error(`[BOT] ❌ Failed to close position ${decision.positionAddress.substring(0, 8)}... - no signature returned`);
-                return; // Не открываем новую позицию, если старая не закрыта
-              }
-              
-              // Ждем подтверждения транзакции закрытия, чтобы токены вернулись в кошелек
-              console.log(`[BOT] ⏳ Waiting for close transaction confirmation: ${closeSignature}`);
-              try {
-                await this.connection.confirmTransaction(closeSignature, 'confirmed');
-                console.log(`[BOT] ✅ Close transaction confirmed, waiting for balance to update...`);
-                
-                // Ждем и проверяем баланс SOL несколько раз, чтобы убедиться что rent вернулся
-                for (let i = 0; i < 5; i++) {
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                  const solBalance = await this.connection.getBalance(this.userKeypair.publicKey, 'confirmed');
-                  console.log(`[BOT] Balance check ${i + 1}/5: ${(solBalance / 1e9).toFixed(6)} SOL`);
-                }
-              } catch (error) {
-                console.warn(`[BOT] ⚠️ Failed to confirm close transaction, proceeding anyway:`, error);
-              }
-            } catch (closeError) {
-              console.error(`[BOT] ❌ Error closing position ${decision.positionAddress.substring(0, 8)}...:`, closeError);
+            
+            if (!closeSignature) {
+              console.error(`[BOT] ❌ Failed to close position ${decision.positionAddress.substring(0, 8)}... - no signature returned`);
               return; // Не открываем новую позицию, если старая не закрыта
             }
-          } else {
-          console.warn(`[BOT] ⚠️ shouldCloseOld is false - old position will NOT be closed before opening new one!`);
-        }
+            
+            // Ждем подтверждения транзакции закрытия, чтобы токены вернулись в кошелек
+            console.log(`[BOT] ⏳ Waiting for close transaction confirmation: ${closeSignature}`);
+            try {
+              await this.connection.confirmTransaction(closeSignature, 'confirmed');
+              console.log(`[BOT] ✅ Close transaction confirmed, waiting for balance to update...`);
+              
+              // Ждем и проверяем баланс SOL несколько раз, чтобы убедиться что rent вернулся
+              for (let i = 0; i < 5; i++) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const solBalance = await this.connection.getBalance(this.userKeypair.publicKey, 'confirmed');
+                console.log(`[BOT] Balance check ${i + 1}/5: ${(solBalance / 1e9).toFixed(6)} SOL`);
+              }
+            } catch (error) {
+              console.warn(`[BOT] ⚠️ Failed to confirm close transaction, proceeding anyway:`, error);
+            }
+          } catch (closeError) {
+            console.error(`[BOT] ❌ Error closing position ${decision.positionAddress.substring(0, 8)}...:`, closeError);
+            return; // Не открываем новую позицию, если старая не закрыта
+          }
+          
           try {
-            await this.openNewPositionBelow(position, decision.newPositionParams, decision.shouldCloseOld ?? false);
+            await this.openNewPosition(position, decision.newPositionParams);
             // Если успешно открыли позицию, очищаем ошибку
             this.lastOpenPositionErrors.delete(position.positionAddress);
           } catch (error) {
@@ -237,7 +238,7 @@ export class PositionMonitor {
               timestamp: Date.now(),
               error: errorMsg,
             });
-            console.error(`[BOT] Error opening new position below: ${errorMsg}`);
+            console.error(`[BOT] Error opening new position: ${errorMsg}`);
             // Не пробрасываем ошибку дальше, чтобы не прерывать мониторинг других позиций
           }
         } else {
@@ -261,13 +262,213 @@ export class PositionMonitor {
   }
 
   /**
-   * Открыть новую позицию (ниже или выше текущей в зависимости от движения цены)
+   * Проверить и выполнить авто-клейм комиссий
    */
-  private async openNewPositionBelow(
+  private async checkAndClaimFees(position: PositionInfo): Promise<void> {
+    if (!position.autoClaim?.enabled || !position.autoClaim?.thresholdUSD) {
+      return;
+    }
+
+    try {
+      // Получаем реальные claimable fees через strategyCalculator
+      const accumulatedFees = await this.strategyCalculator.getRealAccumulatedFees(
+        this.connection,
+        position,
+        position.currentPrice || position.initialPrice,
+      );
+
+      // Проверяем, достиг ли порог
+      if (accumulatedFees >= position.autoClaim.thresholdUSD) {
+        console.log(`[BOT] 💰 Auto-claim triggered for position ${position.positionAddress.substring(0, 8)}...:`, {
+          accumulatedFees: `$${accumulatedFees.toFixed(2)}`,
+          threshold: `$${position.autoClaim.thresholdUSD.toFixed(2)}`,
+        });
+
+        // Выполняем клейм
+        await this.positionManager.claimFees(position.positionAddress);
+      }
+    } catch (error) {
+      console.warn(`[BOT] ⚠️ Failed to check/claim fees for position ${position.positionAddress.substring(0, 8)}...:`, error);
+    }
+  }
+
+  /**
+   * Автоматически купить недостающие токены через Jupiter swap
+   */
+  private async buyMissingTokens(
+    tokenXMint: string,
+    tokenYMint: string,
+    requiredX: bigint,
+    requiredY: bigint,
+    availableX: string,
+    availableY: string,
+    poolAddress: string,
+  ): Promise<{ success: boolean; error?: string; transactionBase64?: string; type?: string; missingAmount?: string }> {
+    try {
+      const { getQuote, createSwapTransaction } = await import('../dex/jupiter.js');
+      const { signAndSend } = await import('../execution/trader.js');
+      const { toSmallestUnitsAuto, fromSmallestUnitsAuto } = await import('../utils/tokenUtils.js');
+      const { getAssociatedTokenAddress } = await import('@solana/spl-token');
+      
+      const missingX = requiredX - BigInt(availableX);
+      const missingY = requiredY - BigInt(availableY);
+      
+      // Определяем, какие токены нужно купить
+      const SOL_MINT = 'So11111111111111111111111111111111111111112';
+      const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+      const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+      
+      // Если не хватает Token X
+      if (missingX > 0n) {
+        console.log(`[BOT] 🔄 Need to buy ${missingX.toString()} units of Token X`);
+        
+        // Определяем, какой токен использовать для покупки (обычно Token Y или SOL)
+        let inputMint: string;
+        let inputAmount: bigint;
+        
+        if (tokenYMint === USDC_MINT || tokenYMint === USDT_MINT) {
+          // Если Token Y - стейблкоин, используем его для покупки Token X
+          inputMint = tokenYMint;
+          // Конвертируем missingX в USD эквивалент (упрощенно, используем текущую цену)
+          const currentPrice = await this.priceMonitor.getPoolPrice(poolAddress);
+          const missingXHuman = await fromSmallestUnitsAuto(this.connection, missingX.toString(), tokenXMint);
+          const missingXUSD = missingXHuman * currentPrice;
+          inputAmount = await toSmallestUnitsAuto(this.connection, missingXUSD, tokenYMint);
+        } else if (tokenXMint === SOL_MINT) {
+          // Если Token X - SOL, а Token Y не стейблкоин, используем SOL из баланса
+          const solBalance = await this.connection.getBalance(this.userKeypair.publicKey, 'confirmed');
+          if (BigInt(solBalance) < missingX) {
+            return { success: false, error: 'Not enough SOL to buy missing Token X' };
+          }
+          // Для SOL swap не нужен, так как это нативный токен
+          return { success: true }; // SOL уже доступен
+        } else {
+          // Пробуем использовать Token Y для покупки Token X
+          inputMint = tokenYMint;
+          const availableYBigInt = BigInt(availableY);
+          if (availableYBigInt < missingX) {
+            return { success: false, error: 'Not enough Token Y to buy missing Token X' };
+          }
+          inputAmount = missingX; // Упрощенно
+        }
+        
+        // Выполняем swap
+        const quote = await getQuote({
+          inputMint,
+          outputMint: tokenXMint,
+          amount: Number(inputAmount),
+          slippageBps: 100, // 1% slippage
+        });
+        
+        if (!quote || !quote.outAmount) {
+          return { success: false, error: 'No quote available for Token X swap' };
+        }
+        
+        const swapTx = await createSwapTransaction(
+          this.connection,
+          this.userKeypair.publicKey,
+          quote,
+        );
+        
+        // Отправляем транзакцию на подпись через API вместо автоматической подписи
+        const serialized = Buffer.from(swapTx.serialize()).toString('base64');
+        console.log(`[BOT] 📝 Token X swap transaction created, waiting for user signature...`);
+        console.log(`[BOT] 🔗 Please sign the transaction via API: POST /api/tx/sign-for-token-purchase`);
+        // Возвращаем информацию о транзакции для подписи
+        return { 
+          success: false, 
+          error: 'Transaction requires user signature',
+          transactionBase64: serialized,
+          type: 'buy_token_x',
+          missingAmount: missingX.toString(),
+        };
+      }
+      
+      // Если не хватает Token Y
+      if (missingY > 0n) {
+        console.log(`[BOT] 🔄 Need to buy ${missingY.toString()} units of Token Y`);
+        
+        // Определяем, какой токен использовать для покупки
+        let inputMint: string;
+        let inputAmount: bigint;
+        
+        if (tokenXMint === SOL_MINT) {
+          // Если Token X - SOL, используем его для покупки Token Y
+          const solBalance = await this.connection.getBalance(this.userKeypair.publicKey, 'confirmed');
+          const missingYHuman = await fromSmallestUnitsAuto(this.connection, missingY.toString(), tokenYMint);
+          // Для стейблкоинов 1 токен = 1 USD, для SOL нужна цена
+          const currentPrice = await this.priceMonitor.getPoolPrice(poolAddress);
+          const missingYUSD = missingYHuman; // Token Y обычно стейблкоин
+          const missingYSOL = missingYUSD / currentPrice;
+          const missingYSOLBigInt = await toSmallestUnitsAuto(this.connection, missingYSOL, SOL_MINT);
+          
+          if (BigInt(solBalance) < missingYSOLBigInt) {
+            return { success: false, error: 'Not enough SOL to buy missing Token Y' };
+          }
+          inputMint = SOL_MINT;
+          inputAmount = missingYSOLBigInt;
+        } else {
+          // Используем Token X для покупки Token Y
+          inputMint = tokenXMint;
+          const availableXBigInt = BigInt(availableX);
+          const missingYHuman = await fromSmallestUnitsAuto(this.connection, missingY.toString(), tokenYMint);
+          const currentPrice = await this.priceMonitor.getPoolPrice(poolAddress);
+          const missingXNeeded = missingYHuman / currentPrice;
+          inputAmount = await toSmallestUnitsAuto(this.connection, missingXNeeded, tokenXMint);
+          
+          if (availableXBigInt < inputAmount) {
+            return { success: false, error: 'Not enough Token X to buy missing Token Y' };
+          }
+        }
+        
+        // Выполняем swap
+        const quote = await getQuote({
+          inputMint,
+          outputMint: tokenYMint,
+          amount: Number(inputAmount),
+          slippageBps: 100, // 1% slippage
+        });
+        
+        if (!quote || !quote.outAmount) {
+          return { success: false, error: 'No quote available for Token Y swap' };
+        }
+        
+        const swapTx = await createSwapTransaction(
+          this.connection,
+          this.userKeypair.publicKey,
+          quote,
+        );
+        
+        // Отправляем транзакцию на подпись через API вместо автоматической подписи
+        const serialized = Buffer.from(swapTx.serialize()).toString('base64');
+        console.log(`[BOT] 📝 Token Y swap transaction created, waiting for user signature...`);
+        console.log(`[BOT] 🔗 Please sign the transaction via API: POST /api/tx/sign-for-token-purchase`);
+        // Возвращаем информацию о транзакции для подписи
+        return { 
+          success: false, 
+          error: 'Transaction requires user signature',
+          transactionBase64: serialized,
+          type: 'buy_token_y',
+          missingAmount: missingY.toString(),
+        };
+      }
+      
+      return { success: true };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[BOT] ❌ Error buying missing tokens:`, errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * Открыть новую позицию (выше или ниже текущей цены)
+   */
+  private async openNewPosition(
     oldPosition: PositionInfo,
-    newPositionParams: { poolAddress: string; rangeInterval: number },
-    shouldCloseOld: boolean = true,
+    newPositionParams: { poolAddress: string; rangeInterval: number; direction?: 'above' | 'below' },
   ): Promise<void> {
+    const direction = newPositionParams.direction || 'below'; // По умолчанию ниже
     try {
       // Сначала пробуем использовать тот же пул, где была открыта старая позиция
       // Это более надежно, так как пул точно существует и подходит для этих токенов
@@ -444,57 +645,79 @@ export class PositionMonitor {
       // Проверяем балансы сразу
       let balances = await checkBalances();
       
-      // Если старая позиция НЕ закрывается, не ждем токены - сразу проверяем баланс и выбрасываем ошибку
-      if (!shouldCloseOld) {
-        if (!balances.hasEnough) {
-          console.error(`[BOT] ❌ Insufficient balance to open new position (old position is NOT being closed):`);
-          console.error(`[BOT] Required: X=${requestedX.toString()}, Y=${requestedY.toString()}`);
-          console.error(`[BOT] Available: X=${balances.tokenXAmount}, Y=${balances.tokenYAmount}`);
-          console.error(`[BOT] Missing: X=${(requestedX - BigInt(balances.tokenXAmount)).toString()}, Y=${(requestedY - BigInt(balances.tokenYAmount)).toString()}`);
-          throw new Error(`Insufficient balance: Required X=${requestedX.toString()}, Y=${requestedY.toString()}, Available X=${balances.tokenXAmount}, Y=${balances.tokenYAmount}`);
-        }
-        // Если баланса достаточно, продолжаем открытие позиции
-        console.log(`[BOT] ✅ Sufficient balance found (old position not closed):`, {
-          tokenX: balances.tokenXAmount,
-          tokenY: balances.tokenYAmount,
+      // Ждем поступления токенов из закрытой позиции
+      let attempts = 0;
+      const maxAttempts = 30; // Максимум 30 попыток (около 1 минуты при задержке 2 секунды)
+      const checkInterval = 2000; // Проверяем каждые 2 секунды
+      
+      // Если средств недостаточно, ждем их поступления
+      while (!balances.hasEnough && attempts < maxAttempts) {
+        attempts++;
+        console.log(`[BOT] Waiting for tokens from closed position (attempt ${attempts}/${maxAttempts}):`, {
+          requestedX: requestedX.toString(),
+          requestedY: requestedY.toString(),
+          availableX: balances.tokenXAmount,
+          availableY: balances.tokenYAmount,
+          tokenXMint: oldPosition.tokenXMint.substring(0, 8) + '...',
+          tokenYMint: oldPosition.tokenYMint.substring(0, 8) + '...',
+          tokenXATA: tokenXATA.toBase58().substring(0, 8) + '...',
+          tokenYATA: tokenYATA.toBase58().substring(0, 8) + '...',
         });
-      } else {
-        // Если старая позиция закрывается, ждем поступления токенов
-        let attempts = 0;
-        const maxAttempts = 30; // Максимум 30 попыток (около 1 минуты при задержке 2 секунды)
-        const checkInterval = 2000; // Проверяем каждые 2 секунды
         
-        // Если средств недостаточно, ждем их поступления
-        while (!balances.hasEnough && attempts < maxAttempts) {
-          attempts++;
-          console.log(`[BOT] Waiting for tokens from closed position (attempt ${attempts}/${maxAttempts}):`, {
-            requestedX: requestedX.toString(),
-            requestedY: requestedY.toString(),
-            availableX: balances.tokenXAmount,
-            availableY: balances.tokenYAmount,
-            tokenXMint: oldPosition.tokenXMint.substring(0, 8) + '...',
-            tokenYMint: oldPosition.tokenYMint.substring(0, 8) + '...',
-            tokenXATA: tokenXATA.toBase58().substring(0, 8) + '...',
-            tokenYATA: tokenYATA.toBase58().substring(0, 8) + '...',
-          });
-          
-          await new Promise(resolve => setTimeout(resolve, checkInterval));
-          balances = await checkBalances();
-        }
-        
-        if (!balances.hasEnough) {
-          console.error(`[BOT] ❌ Not enough tokens after ${maxAttempts} attempts. Cannot open new position.`);
-          console.error(`[BOT] Required: X=${requestedX.toString()}, Y=${requestedY.toString()}`);
-          console.error(`[BOT] Available: X=${balances.tokenXAmount}, Y=${balances.tokenYAmount}`);
-          return; // Не открываем позицию, если средств недостаточно
-        }
-        
-        console.log(`[BOT] ✅ Sufficient token balances found after waiting:`, {
-          tokenX: balances.tokenXAmount,
-          tokenY: balances.tokenYAmount,
-          attempts: attempts + 1,
-        });
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        balances = await checkBalances();
       }
+      
+      // Если после ожидания все еще недостаточно токенов, пытаемся купить недостающие через swap
+      if (!balances.hasEnough) {
+        console.log(`[BOT] 🔄 Attempting to buy missing tokens via swap...`);
+        const swapResult = await this.buyMissingTokens(
+          oldPosition.tokenXMint,
+          oldPosition.tokenYMint,
+          requestedX,
+          requestedY,
+          balances.tokenXAmount,
+          balances.tokenYAmount,
+          oldPosition.poolAddress,
+        );
+        
+        if (swapResult.success) {
+          console.log(`[BOT] ✅ Successfully bought missing tokens via swap`);
+          // Обновляем балансы после swap
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Ждем обновления балансов
+          balances = await checkBalances();
+        } else if (swapResult.transactionBase64) {
+          // Транзакция создана, но требует подписи пользователя
+          console.log(`[BOT] 📝 Token purchase transaction created, requires user signature`);
+          console.log(`[BOT] 📋 Transaction details:`, {
+            type: swapResult.type,
+            missingAmount: swapResult.missingAmount,
+            transactionBase64: swapResult.transactionBase64.substring(0, 50) + '...',
+          });
+          console.log(`[BOT] ⚠️ Please sign the transaction via web interface or API`);
+          console.log(`[BOT] ⏸️ Waiting for user to sign transaction...`);
+          // Не открываем позицию, пока транзакция не будет подписана
+          return;
+        } else {
+          console.error(`[BOT] ❌ Failed to buy missing tokens: ${swapResult.error}`);
+          console.error(`[BOT] Required: X=${requestedX.toString()}, Y=${requestedY.toString()}`);
+          console.error(`[BOT] Available: X=${balances.tokenXAmount}, Y=${balances.tokenYAmount}`);
+          return; // Не открываем позицию, если не удалось купить недостающие токены
+        }
+      }
+      
+      // Финальная проверка балансов после попытки покупки
+      if (!balances.hasEnough) {
+        console.error(`[BOT] ❌ Not enough tokens after swap attempt. Cannot open new position.`);
+        console.error(`[BOT] Required: X=${requestedX.toString()}, Y=${requestedY.toString()}`);
+        console.error(`[BOT] Available: X=${balances.tokenXAmount}, Y=${balances.tokenYAmount}`);
+        return;
+      }
+      
+      console.log(`[BOT] ✅ Sufficient token balances found:`, {
+        tokenX: balances.tokenXAmount,
+        tokenY: balances.tokenYAmount,
+      });
       
       const tokenXAmount = balances.tokenXAmount;
       const tokenYAmount = balances.tokenYAmount;
@@ -607,19 +830,19 @@ export class PositionMonitor {
       );
 
       if (newPosition) {
-        console.log(`[BOT] ✅ New position opened below old position ${oldPosition.positionAddress.substring(0, 8)}...`);
+        const directionText = direction === 'above' ? 'above' : 'below';
+        console.log(`[BOT] ✅ New position opened ${directionText} old position ${oldPosition.positionAddress.substring(0, 8)}...`);
         console.log(`[BOT] 📊 Active positions count: ${this.positionManager.getActivePositions().length}`);
-        console.log(`[BOT] 📋 Old position ${oldPosition.positionAddress.substring(0, 8)}... remains active (status: ${oldPosition.status})`);
 
         // Запускаем Mirror Swapping для новой позиции (дельта-нейтральность)
         if (this.config.mirrorSwap.enabled) {
           await this.startHedgingForPosition(newPosition);
         }
       } else {
-        console.error(`[BOT] ❌ Failed to open new position below ${oldPosition.positionAddress.substring(0, 8)}...`);
+        console.error(`[BOT] ❌ Failed to open new position ${direction === 'above' ? 'above' : 'below'} ${oldPosition.positionAddress.substring(0, 8)}...`);
       }
     } catch (error) {
-      console.error('Error opening new position below:', error);
+      console.error(`Error opening new position ${direction === 'above' ? 'above' : 'below'}:`, error);
     }
   }
 
@@ -653,7 +876,6 @@ export class PositionMonitor {
       feeCheckPercent: poolConfig.feeCheckPercent,
       takeProfitPercent: poolConfig.takeProfitPercent,
       mirrorSwap: poolConfig.mirrorSwap,
-      averagePriceClose: poolConfig.averagePriceClose,
     };
 
     if (!configForPosition.mirrorSwap.enabled) {
@@ -697,7 +919,6 @@ export class PositionMonitor {
       feeCheckPercent: poolConfig.feeCheckPercent,
       takeProfitPercent: poolConfig.takeProfitPercent,
       mirrorSwap: poolConfig.mirrorSwap,
-      averagePriceClose: poolConfig.averagePriceClose,
     };
 
     if (!configForPosition.mirrorSwap.enabled) {

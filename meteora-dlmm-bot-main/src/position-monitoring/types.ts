@@ -37,7 +37,13 @@ export type PositionInfo = {
   lastPriceCheck: number; // Последняя проверка цены
   currentPrice?: number; // Текущая цена
   accumulatedFees?: number; // Накопленные комиссии в USD
-  waitingForAveragePriceClose?: boolean; // Флаг: позиция ждет возврата к средней цене после пробития нижней границы
+  lastClaimAt?: number; // Время последнего клейма комиссий
+  
+  // Авто-клейм комиссий
+  autoClaim?: {
+    enabled: boolean; // Включен ли авто-клейм
+    thresholdUSD: number; // Пороговое значение в USD для автоматического клейма
+  };
   
   // Для Mirror Swapping
   hedgePosition?: {
@@ -72,8 +78,8 @@ export type PositionDecision = {
   newPositionParams?: {
     poolAddress: string;
     rangeInterval: number; // Используем rangeInterval из старой позиции
+    direction?: 'above' | 'below'; // Направление: выше или ниже текущей цены (для логирования)
   };
-  shouldCloseOld?: boolean; // Флаг для закрытия старой позиции перед открытием новой
 };
 
 export type FeeVsLossCalculation = {

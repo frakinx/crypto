@@ -338,11 +338,14 @@ export class StrategyCalculator {
     // Иначе используем полный расчет от initialPrice
     const basePrice = lastHedgePrice || initialPrice;
     
-    // Формула из презентации: h = 0.5 · (P₀ − P)/P₀
-    // Применяем hedgePercent к коэффициенту 0.5
-    // Если hedgePercent = 50%, то h = 0.5 * 0.5 * (P₀ − P)/P₀ = 0.25 * (P₀ − P)/P₀
+    // Формула для полного зеркалирования: h = (P₀ − P)/P₀
+    // Применяем hedgePercent: если hedgePercent = 100%, то хеджируем 100% изменения
+    // Если hedgePercent = 50%, то хеджируем 50% изменения
+    // Для полного зеркалирования (100%) нужно убрать коэффициент 0.5
     const priceChange = (basePrice - currentPrice) / basePrice;
-    const hedgeRatio = (hedgePercent / 100) * 0.5 * priceChange;
+    // При hedgePercent = 100% хеджируем 100% изменения цены (полное зеркалирование)
+    // При hedgePercent = 50% хеджируем 50% изменения цены
+    const hedgeRatio = (hedgePercent / 100) * priceChange;
     
     // Рассчитываем стоимость позиции при текущей цене
     const positionValue = await this.estimatePositionValue(position, currentPrice, positionBinData);

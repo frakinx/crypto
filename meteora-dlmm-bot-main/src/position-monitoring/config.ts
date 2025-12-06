@@ -35,11 +35,6 @@ export type AdminConfig = {
     minHedgeAmount?: number; // Минимальная сумма для hedge (по умолчанию 0.001)
   };
   
-  // Средняя цена для закрытия позиций
-  averagePriceClose: {
-    enabled: boolean; // Включить закрытие по достижении средней цены
-    percentDeviation: number; // Отклонение от средней цены в процентах (например, ±2%)
-  };
 };
 
 // Конфигурация по умолчанию
@@ -57,14 +52,10 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   },
   mirrorSwap: {
     enabled: true,
-    hedgeAmountPercent: 50, // Хеджируем 50% позиции
+    hedgeAmountPercent: 100, // Хеджируем 100% позиции (полное зеркалирование)
     slippageBps: 100, // 1% slippage для hedge swap
     minPriceChangePercent: 0.1, // Минимальное изменение цены 0.1% для trigger hedge
     minHedgeAmount: 0.001, // Минимальная сумма для hedge
-  },
-  averagePriceClose: {
-    enabled: true,
-    percentDeviation: 2, // ±2% от средней цены
   },
 };
 
@@ -98,10 +89,6 @@ export type PoolConfig = {
     slippageBps: number;
     minPriceChangePercent?: number;
     minHedgeAmount?: number;
-  };
-  averagePriceClose: {
-    enabled: boolean;
-    percentDeviation: number;
   };
 };
 
@@ -138,7 +125,6 @@ export function getPoolConfigOrDefault(poolAddress: string): PoolConfig {
     feeCheckPercent: DEFAULT_ADMIN_CONFIG.feeCheckPercent,
     takeProfitPercent: DEFAULT_ADMIN_CONFIG.takeProfitPercent,
     mirrorSwap: DEFAULT_ADMIN_CONFIG.mirrorSwap,
-    averagePriceClose: DEFAULT_ADMIN_CONFIG.averagePriceClose,
   };
 }
 

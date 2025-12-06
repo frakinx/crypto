@@ -554,6 +554,52 @@ export async function getClaimableSwapFees(
 }
 
 /**
+ * Create transaction to claim swap fees from a position
+ */
+export async function createClaimSwapFeesTransaction(
+  connection: Connection,
+  poolAddress: string,
+  positionAddress: string,
+  ownerPublicKey: PublicKey,
+): Promise<VersionedTransaction> {
+  const dlmmPool = await createDlmmPool(connection, poolAddress);
+  const positionPubKey = new PublicKey(positionAddress);
+
+  // Get position first
+  const { userPositions } = await dlmmPool.getPositionsByUserAndLbPair(ownerPublicKey);
+  const position = userPositions.find(p => p.publicKey.equals(positionPubKey));
+  
+  if (!position) {
+    throw new Error('Position not found');
+  }
+
+  // Create claim fees transaction using SDK
+  // claimSwapFee expects LbPosition object, not PublicKey
+  // Метод claimSwapFee принимает объект позиции и owner
+  const claimTx = await dlmmPool.claimSwapFee({
+    position: position, // Pass the full LbPosition object
+    owner: ownerPublicKey,
+  });
+
+  // Get latest blockhash
+  const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+  
+  // Convert to VersionedTransaction
+  if (Array.isArray(claimTx)) {
+    // If multiple transactions, return the first one
+    const tx = claimTx[0];
+    tx.recentBlockhash = latestBlockhash.blockhash;
+    tx.feePayer = ownerPublicKey;
+    return new VersionedTransaction(tx.compileMessage());
+  } else {
+    const tx = claimTx as Transaction;
+    tx.recentBlockhash = latestBlockhash.blockhash;
+    tx.feePayer = ownerPublicKey;
+    return new VersionedTransaction(tx.compileMessage());
+  }
+}
+
+/**
  * Get position bin data (real distribution of tokens across bins)
  */
 export async function getPositionBinData(

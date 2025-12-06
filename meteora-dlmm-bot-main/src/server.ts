@@ -607,13 +607,13 @@ app.post('/api/tx/send', async (req, res) => {
       
       // Всегда отклоняем транзакцию с устаревшим blockhash
       // Пользователь должен пересоздать транзакцию с актуальным blockhash
-      return res.status(400).json({
-        error: 'Blockhash устарел. Пожалуйста, пересоздайте транзакцию.',
-        code: 'BLOCKHASH_EXPIRED',
-        hint: 'Транзакция была создана слишком давно. Создайте новую транзакцию и подпишите её быстрее.',
+        return res.status(400).json({
+          error: 'Blockhash устарел. Пожалуйста, пересоздайте транзакцию.',
+          code: 'BLOCKHASH_EXPIRED',
+          hint: 'Транзакция была создана слишком давно. Создайте новую транзакцию и подпишите её быстрее.',
         oldBlockhash: txBlockhash.substring(0, 8) + '...',
         currentBlockhash: currentBlockhashInfo.blockhash.substring(0, 8) + '...',
-      });
+        });
     }
     
     let sig: string;
@@ -962,6 +962,7 @@ app.post('/api/positions/save', async (req, res) => {
       tokenYAmount,
       tokenXMint: reqTokenXMint,
       tokenYMint: reqTokenYMint,
+      autoClaim,
     } = req.body || {};
     
     console.log(`[WEB] 📨 Received position save request:`, {
@@ -1036,6 +1037,7 @@ app.post('/api/positions/save', async (req, res) => {
       lastPriceCheck: Date.now(),
       currentPrice: currentPriceUSD,
       accumulatedFees: 0,
+      autoClaim: autoClaim || undefined,
     };
     
     console.log(`[WEB] 💾 Сохраняем позицию ${positionAddress.substring(0, 8)}...`, {
@@ -1174,6 +1176,38 @@ app.get('/api/positions/:positionAddress', (req, res) => {
   } catch (error) {
     console.error('Error loading position:', error);
     res.status(500).json({ error: 'Failed to load position' });
+  }
+});
+
+// Обновить настройки позиции
+app.post('/api/positions/:positionAddress/update', (req, res) => {
+  try {
+    const { positionAddress } = req.params;
+    const { autoClaim } = req.body || {};
+    
+    const storage = new PositionStorage();
+    const position = storage.getPosition(positionAddress);
+    
+    if (!position) {
+      return res.status(404).json({ error: 'Position not found' });
+    }
+    
+    // Обновляем настройки
+    if (autoClaim !== undefined) {
+      position.autoClaim = autoClaim || undefined;
+    }
+    
+    // Сохраняем обновленную позицию
+    storage.savePosition(position);
+    
+    console.log(`[WEB] ✅ Updated position ${positionAddress.substring(0, 8)}... settings:`, {
+      autoClaim: autoClaim || 'disabled',
+    });
+    
+    res.json({ success: true, position });
+  } catch (error) {
+    console.error('Error updating position settings:', error);
+    res.status(500).json({ error: (error as Error).message || 'Failed to update position settings' });
   }
 });
 

@@ -326,7 +326,7 @@ export class HedgeManager {
         hedgeAmountPercent: config.mirrorSwap.hedgeAmountPercent + '%',
         positionValueUSD: positionValue.toFixed(2),
         hedgeValueUSD: (positionValue * Math.abs(hedge.hedgeRatio || 0)).toFixed(2),
-        formula: `h = ${(config.mirrorSwap.hedgeAmountPercent / 100).toFixed(2)} * 0.5 * (${lastHedgePrice.toFixed(2)} - ${currentPrice.toFixed(2)}) / ${lastHedgePrice.toFixed(2)} = ${hedge.hedgeRatio?.toFixed(6) || 'N/A'}`,
+        formula: `h = ${(config.mirrorSwap.hedgeAmountPercent / 100).toFixed(2)} * (${lastHedgePrice.toFixed(2)} - ${currentPrice.toFixed(2)}) / ${lastHedgePrice.toFixed(2)} = ${hedge.hedgeRatio?.toFixed(6) || 'N/A'}`,
       });
 
       // Получаем котировку от Jupiter

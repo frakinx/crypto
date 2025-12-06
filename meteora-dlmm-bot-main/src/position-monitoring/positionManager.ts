@@ -4,6 +4,7 @@ import {
   createClosePositionTransaction,
   getPositionInfo,
   getClaimableSwapFees,
+  createClaimSwapFeesTransaction,
   createDlmmPool,
 } from '../dex/meteora.js';
 import { signAndSend } from '../execution/trader.js';
@@ -174,6 +175,7 @@ export class PositionManager {
     tokenYAmount: string,
     rangeInterval: number | undefined,
     config: AdminConfig,
+    autoClaim?: { enabled: boolean; thresholdUSD: number },
   ): Promise<PositionInfo> {
     // Валидация и fallback для rangeInterval
     if (!rangeInterval || rangeInterval <= 0 || rangeInterval > 100) {
@@ -316,6 +318,7 @@ export class PositionManager {
       lastPriceCheck: Date.now(),
       currentPrice: currentPrice,
       accumulatedFees: 0,
+      autoClaim: autoClaim || undefined,
     };
 
     // Сохраняем позицию
@@ -542,8 +545,8 @@ export class PositionManager {
         newPositionParams: {
           poolAddress: position.poolAddress,
           rangeInterval: position.rangeInterval, // Используем тот же rangeInterval
+          direction: 'above', // Открываем новую позицию ВЫШЕ текущей цены
         },
-        shouldCloseOld: true, // Флаг для закрытия старой позиции
       };
     }
 
@@ -674,57 +677,21 @@ export class PositionManager {
           newPositionParams: {
             poolAddress: position.poolAddress,
             rangeInterval: position.rangeInterval,
+            direction: 'below', // Открываем новую позицию НИЖЕ текущей цены
           },
-          shouldCloseOld: true, // Закрываем старую позицию перед открытием новой
         };
       } else {
-        // Комиссии < потерь → НЕ закрываем позицию, открываем новую ниже и ждем возврата к средней цене
-        if (config.averagePriceClose.enabled) {
-          // Устанавливаем флаг ожидания возврата к средней цене
-          position.waitingForAveragePriceClose = true;
-          this.storage.savePosition(position);
-        }
-        
-        console.log(`[BOT] 📍 Fees don't cover losses - opening new position below (keeping old position active, ${config.averagePriceClose.enabled ? 'waiting for average price return' : 'no average price wait'})`);
+        // Комиссии < потерь → закрываем позицию и открываем новую ниже
+        console.log(`[BOT] 📍 Fees don't cover losses - closing position and opening new one below`);
         return {
           action: 'open_new',
-          reason: `Fees ($${calculation.accumulatedFees.toFixed(2)}) don't cover losses ($${calculation.estimatedLoss.toFixed(2)}) - opening new position below, old position ${config.averagePriceClose.enabled ? 'waiting for average price return' : 'remains active'}`,
+          reason: `Fees ($${calculation.accumulatedFees.toFixed(2)}) don't cover losses ($${calculation.estimatedLoss.toFixed(2)}) - closing and opening new position below`,
           positionAddress: position.positionAddress,
           newPositionParams: {
             poolAddress: position.poolAddress,
             rangeInterval: position.rangeInterval,
+            direction: 'below', // Открываем новую позицию НИЖЕ текущей цены
           },
-          shouldCloseOld: false, // НЕ закрываем старую позицию - она остается в мониторинге
-        };
-      }
-    }
-
-    // Проверяем закрытие по достижении средней цены (averagePriceClose)
-    // Работает ТОЛЬКО если позиция ждет возврата к средней после пробития нижней границы
-    if (config.averagePriceClose.enabled && position.waitingForAveragePriceClose) {
-      const averagePrice = (position.lowerBoundPrice + position.upperBoundPrice) / 2;
-      const priceDeviationFromAverage = Math.abs((priceUpdate.price - averagePrice) / averagePrice) * 100;
-      
-      // Если цена вернулась к средней цене в пределах percentDeviation, закрываем позицию
-      if (priceDeviationFromAverage <= config.averagePriceClose.percentDeviation) {
-        console.log(`[BOT] 📊 AVERAGE PRICE CLOSE triggered for position ${position.positionAddress.substring(0, 8)}...:`, {
-          currentPrice: priceUpdate.price.toFixed(6),
-          averagePrice: averagePrice.toFixed(6),
-          priceDeviationFromAverage: priceDeviationFromAverage.toFixed(2) + '%',
-          percentDeviation: config.averagePriceClose.percentDeviation + '%',
-          lowerBound: position.lowerBoundPrice.toFixed(6),
-          upperBound: position.upperBoundPrice.toFixed(6),
-          wasWaitingForAverage: true,
-        });
-
-        // Сбрасываем флаг
-        position.waitingForAveragePriceClose = false;
-        this.storage.savePosition(position);
-
-        return {
-          action: 'close',
-          reason: `Price returned to average price (${averagePrice.toFixed(6)}) with deviation ${priceDeviationFromAverage.toFixed(2)}% (threshold: ${config.averagePriceClose.percentDeviation}%) after lower bound breach`,
-          positionAddress: position.positionAddress,
         };
       }
     }
@@ -853,6 +820,38 @@ export class PositionManager {
    */
   removePosition(positionAddress: string): void {
     this.activePositions.delete(positionAddress);
+  }
+
+  /**
+   * Клейм комиссий из позиции
+   */
+  async claimFees(positionAddress: string): Promise<string> {
+    const position = this.activePositions.get(positionAddress);
+    if (!position) {
+      throw new Error(`Position ${positionAddress} not found`);
+    }
+
+    if (position.status !== 'active') {
+      throw new Error(`Position ${positionAddress} is not active`);
+    }
+
+    console.log(`[BOT] 💰 Claiming fees for position ${positionAddress.substring(0, 8)}...`);
+
+    const claimTx = await createClaimSwapFeesTransaction(
+      this.connection,
+      position.poolAddress,
+      position.positionAddress,
+      new PublicKey(position.userAddress),
+    );
+
+    const signature = await signAndSend(this.connection, this.userKeypair, claimTx);
+    
+    // Обновляем время последнего клейма
+    position.lastClaimAt = Date.now();
+    this.storage.savePosition(position);
+
+    console.log(`[BOT] ✅ Fees claimed successfully: ${signature}`);
+    return signature;
   }
 }
 

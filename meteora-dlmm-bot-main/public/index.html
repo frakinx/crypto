@@ -615,6 +615,25 @@
               />
             </div>
             
+            <div class="form-group" style="margin-top: 20px;">
+              <label style="color: white; font-size: 1em; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="autoClaimEnabled" checked style="width: auto; margin: 0;" />
+                <span>Авто-клейм комиссий</span>
+              </label>
+              <input 
+                type="number" 
+                id="autoClaimThreshold" 
+                placeholder="Пороговое значение в USD (например, 1.0)" 
+                step="0.01" 
+                min="0" 
+                value="1.0"
+                style="width: 100%; padding: 12px; margin-top: 8px; border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 8px; background: rgba(15, 15, 30, 0.6); color: white; font-size: 14px;" 
+              />
+              <small style="display: block; margin-top: 6px; color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">
+                Комиссии будут автоматически собираться, когда их сумма достигнет указанного порога
+              </small>
+            </div>
+            
             <div class="form-actions" style="margin-top: 24px; display: flex; gap: 12px;">
               
               <button 
@@ -639,6 +658,45 @@
     </div>
   </div>
   </main>
+
+  <!-- Position Settings Modal -->
+  <div id="positionSettingsModal" class="pool-modal">
+    <div class="pool-modal-content">
+      <div class="pool-modal-header">
+        <h2>⚙️ Настройки позиции</h2>
+        <button class="pool-modal-close" id="closePositionSettingsModalBtn">&times;</button>
+      </div>
+      <div class="pool-modal-body">
+        <div id="positionSettingsContent">
+          <div class="form-group">
+            <label style="color: white; font-size: 1em; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="positionAutoClaimEnabled" style="width: auto; margin: 0;" />
+              <span>Авто-клейм комиссий</span>
+            </label>
+            <input 
+              type="number" 
+              id="positionAutoClaimThreshold" 
+              placeholder="Пороговое значение в USD (например, 1.0)" 
+              step="0.01" 
+              min="0" 
+              style="width: 100%; padding: 12px; margin-top: 8px; border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 8px; background: rgba(15, 15, 30, 0.6); color: white; font-size: 14px;" 
+            />
+            <small style="display: block; margin-top: 6px; color: rgba(255, 255, 255, 0.6); font-size: 0.85em;">
+              Комиссии будут автоматически собираться, когда их сумма достигнет указанного порога
+            </small>
+          </div>
+        </div>
+        <div class="form-actions" style="margin-top: 20px;">
+          <button type="button" id="savePositionSettingsBtn" class="save-btn" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;">
+            💾 Сохранить настройки
+          </button>
+        </div>
+        <div id="positionSettingsStatus" class="rpc-status" style="display: none; margin-top: 15px;">
+          <div class="status-message"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Chart.js for graphs -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

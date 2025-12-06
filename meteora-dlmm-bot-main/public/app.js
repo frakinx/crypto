@@ -542,6 +542,27 @@ async function loadPositions() {
       });
     }, 1000);
     
+    // Добавляем обработчики для кнопок закрытия позиций
+    positionsContainer.querySelectorAll('.close-position-main-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const positionAddress = btn.getAttribute('data-position-address');
+        const poolAddress = btn.getAttribute('data-pool-address');
+        if (positionAddress && poolAddress) {
+          await closePosition(positionAddress, poolAddress);
+        }
+      });
+    });
+    
+    // Добавляем обработчики для кнопок настроек позиций
+    positionsContainer.querySelectorAll('.position-settings-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const positionAddress = btn.getAttribute('data-position-address');
+        if (positionAddress) {
+          openPositionSettingsModal(positionAddress);
+        }
+      });
+    });
+    
   } catch (error) {
     console.error('Error loading positions:', error);
     positionsContainer.innerHTML = '<p style="color: #ef4444; text-align: center; padding: 40px;">Ошибка загрузки позиций</p>';
@@ -588,7 +609,10 @@ function convertPositionToDisplayFormat(position) {
       min: (position.lowerPrice || 0).toFixed(8),
       current: (position.currentPrice || position.initialPrice || 0).toFixed(8),
       max: (position.upperPrice || 0).toFixed(8)
-    }
+    },
+    positionAddress: position.positionAddress,
+    poolAddress: position.poolAddress,
+    autoClaim: position.autoClaim
   };
 }
 
@@ -616,10 +640,22 @@ function renderPosition(pos, index) {
   const currentPosition = range > 0 ? ((currentPrice - minPrice) / range) * 100 : 50;
   
   return `
-    <div class="position-card-new">
+    <div class="position-card-new" data-position-address="${pos.positionAddress || ''}" data-pool-address="${pos.poolAddress || ''}">
       <div class="position-header">
         <div class="position-pair-name">${pos.pair}</div>
-        <div class="position-timer">${pos.timer}</div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="position-timer">${pos.timer}</div>
+          <button 
+            class="position-settings-btn" 
+            data-position-address="${pos.positionAddress || ''}"
+            style="background: rgba(102, 126, 234, 0.2); border: 1px solid rgba(102, 126, 234, 0.4); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: #667eea; font-size: 16px; transition: all 0.2s;"
+            onmouseover="this.style.background='rgba(102, 126, 234, 0.3)'"
+            onmouseout="this.style.background='rgba(102, 126, 234, 0.2)'"
+            title="Настройки позиции"
+          >
+            ⚙️
+          </button>
+        </div>
       </div>
       
       <div class="position-metrics-row">
@@ -704,6 +740,20 @@ function renderPosition(pos, index) {
             <span class="price-range-label price-range-label-max">${pos.priceRange.max}</span>
           </div>
         </div>
+      </div>
+      
+      <!-- Кнопки управления позицией -->
+      <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); display: flex; gap: 10px;">
+        <button 
+          class="close-position-main-btn" 
+          data-position-address="${pos.positionAddress || ''}"
+          data-pool-address="${pos.poolAddress || ''}"
+          style="flex: 1; padding: 12px; background: linear-gradient(135deg, #2a2a2a 0%, #4a4a4a 100%); color: white; border: 2px solid #1e3a5f; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95em; transition: all 0.3s ease;"
+          onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.02)'; this.style.borderColor='#2d5a8a'"
+          onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'; this.style.borderColor='#1e3a5f'"
+        >
+          🔒 Закрыть позицию
+        </button>
       </div>
     </div>
   `;
@@ -2928,10 +2978,7 @@ async function loadPoolSettings(poolAddress) {
       document.getElementById('poolSlippageBps').value = config.mirrorSwap.slippageBps || 100;
     }
     
-    if (config.averagePriceClose) {
-      document.getElementById('poolAveragePriceCloseEnabled').checked = config.averagePriceClose.enabled || false;
-      document.getElementById('poolAveragePriceDeviation').value = config.averagePriceClose.percentDeviation || 2;
-    }
+    // averagePriceClose удалено - больше не используется
   } catch (error) {
     console.error('Error loading pool settings:', error);
   }
@@ -2952,10 +2999,6 @@ async function savePoolSettings(poolAddress) {
       enabled: document.getElementById('poolMirrorSwapEnabled').checked,
       hedgeAmountPercent: parseFloat(document.getElementById('poolHedgeAmountPercent').value),
       slippageBps: parseInt(document.getElementById('poolSlippageBps').value),
-    },
-    averagePriceClose: {
-      enabled: document.getElementById('poolAveragePriceCloseEnabled').checked,
-      percentDeviation: parseFloat(document.getElementById('poolAveragePriceDeviation').value),
     },
   };
   
@@ -3108,6 +3151,14 @@ document.addEventListener('DOMContentLoaded', () => {
         await savePoolSettings(currentPoolAddress);
         
         // 1) Запрашиваем у сервера транзакцию открытия позиции
+        // Получаем настройки авто-клейма
+        const autoClaimEnabled = document.getElementById('autoClaimEnabled')?.checked || false;
+        const autoClaimThreshold = parseFloat(document.getElementById('autoClaimThreshold')?.value || '0');
+        const autoClaim = autoClaimEnabled && autoClaimThreshold > 0 ? {
+          enabled: true,
+          thresholdUSD: autoClaimThreshold,
+        } : undefined;
+
         const res = await fetch('/api/meteora/open-position-tx', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3118,6 +3169,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rangeInterval,
             tokenXAmount,
             tokenYAmount,
+            autoClaim,
           }),
         });
         
@@ -3245,6 +3297,7 @@ document.addEventListener('DOMContentLoaded', () => {
               positionAddress: positionPublicKey,
               poolAddress: currentPoolAddress,
               userAddress: walletPublicKey,
+              autoClaim: autoClaim,
               strategy,
               rangeInterval,
               tokenXAmount,
@@ -4267,10 +4320,6 @@ async function loadPoolsConfigs() {
               <span class="detail-label">Mirror Swap:</span>
               <span class="detail-value">${config.mirrorSwap.enabled ? '✅' : '❌'}</span>
             </div>
-            <div class="pool-config-detail-item">
-              <span class="detail-label">Закрытие по средней:</span>
-              <span class="detail-value">${config.averagePriceClose.enabled ? '✅' : '❌'}</span>
-            </div>
           </div>
         </div>
       `;
@@ -4318,8 +4367,7 @@ function openPoolConfigModal(poolAddress, config) {
   document.getElementById('editMirrorSwapEnabled').checked = config.mirrorSwap?.enabled || false;
   document.getElementById('editHedgeAmountPercent').value = config.mirrorSwap?.hedgeAmountPercent || 50;
   document.getElementById('editSlippageBps').value = config.mirrorSwap?.slippageBps || 100;
-  document.getElementById('editAveragePriceCloseEnabled').checked = config.averagePriceClose?.enabled || false;
-  document.getElementById('editAveragePriceDeviation').value = config.averagePriceClose?.percentDeviation || 2;
+  // averagePriceClose удалено - больше не используется
   
   // Скрываем статус
   const statusEl = document.getElementById('poolConfigModalStatus');
@@ -4354,10 +4402,6 @@ async function savePoolConfigFromModal() {
       enabled: document.getElementById('editMirrorSwapEnabled').checked,
       hedgeAmountPercent: parseFloat(document.getElementById('editHedgeAmountPercent').value),
       slippageBps: parseInt(document.getElementById('editSlippageBps').value),
-    },
-    averagePriceClose: {
-      enabled: document.getElementById('editAveragePriceCloseEnabled').checked,
-      percentDeviation: parseFloat(document.getElementById('editAveragePriceDeviation').value),
     },
   };
   
@@ -4651,21 +4695,6 @@ async function loadUserPositions() {
             </div>
           ` : ''}
           
-          <!-- Кнопка закрытия позиции -->
-          ${position.status === 'active' ? `
-            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-              <button 
-                class="close-position-btn" 
-                data-position-address="${position.positionAddress}"
-                data-pool-address="${position.poolAddress}"
-                style="width: 100%; padding: 12px; background: linear-gradient(135deg, #F44336 0%, #D32F2F 100%); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95em; transition: all 0.3s ease;"
-                onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.02)'"
-                onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'"
-              >
-                🔒 Закрыть позицию
-              </button>
-            </div>
-          ` : ''}
         </div>
       `;
     }).join('');
@@ -4674,17 +4703,6 @@ async function loadUserPositions() {
     
     // Обновляем статистику после загрузки позиций
     await updateAdminStats();
-    
-    // Добавляем обработчики для кнопок закрытия позиций
-    positionsList.querySelectorAll('.close-position-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const positionAddress = btn.getAttribute('data-position-address');
-        const poolAddress = btn.getAttribute('data-pool-address');
-        if (positionAddress && poolAddress) {
-          await closePosition(positionAddress, poolAddress);
-        }
-      });
-    });
     
     // Добавляем обработчики для кнопок показа/скрытия истории hedge swaps
     positionsList.querySelectorAll('.toggle-hedge-history-btn').forEach(btn => {
@@ -4701,6 +4719,115 @@ async function loadUserPositions() {
   } catch (error) {
     console.error('Error loading positions:', error);
     positionsList.innerHTML = '<p style="color: #F44336;">Ошибка загрузки позиций: ' + error.message + '</p>';
+  }
+}
+
+// Открыть модальное окно настроек позиции
+async function openPositionSettingsModal(positionAddress) {
+  if (!positionAddress) {
+    console.error('Position address is required');
+    return;
+  }
+  
+  try {
+    // Загружаем данные позиции
+    const response = await fetch(`/api/positions/${positionAddress}`);
+    if (!response.ok) {
+      throw new Error('Failed to load position');
+    }
+    
+    const position = await response.json();
+    
+    // Заполняем форму текущими значениями
+    const autoClaimEnabled = document.getElementById('positionAutoClaimEnabled');
+    const autoClaimThreshold = document.getElementById('positionAutoClaimThreshold');
+    
+    if (autoClaimEnabled && autoClaimThreshold) {
+      autoClaimEnabled.checked = position.autoClaim?.enabled || false;
+      autoClaimThreshold.value = position.autoClaim?.thresholdUSD || '1.0';
+    }
+    
+    // Сохраняем адрес позиции для сохранения
+    const positionSettingsModal = document.getElementById('positionSettingsModal');
+    if (positionSettingsModal) {
+      positionSettingsModal.dataset.positionAddress = positionAddress;
+      positionSettingsModal.classList.add('show');
+    }
+  } catch (error) {
+    console.error('Error opening position settings modal:', error);
+    alert('Ошибка загрузки данных позиции: ' + error.message);
+  }
+}
+
+// Сохранить настройки позиции
+async function savePositionSettings() {
+  const positionSettingsModal = document.getElementById('positionSettingsModal');
+  if (!positionSettingsModal) {
+    return;
+  }
+  
+  const positionAddress = positionSettingsModal.dataset.positionAddress;
+  if (!positionAddress) {
+    console.error('Position address not found');
+    return;
+  }
+  
+  const autoClaimEnabled = document.getElementById('positionAutoClaimEnabled')?.checked || false;
+  const autoClaimThreshold = parseFloat(document.getElementById('positionAutoClaimThreshold')?.value || '0');
+  
+  const autoClaim = autoClaimEnabled && autoClaimThreshold > 0 ? {
+    enabled: true,
+    thresholdUSD: autoClaimThreshold,
+  } : undefined;
+  
+  const statusEl = document.getElementById('positionSettingsStatus');
+  const statusMessage = statusEl?.querySelector('.status-message');
+  
+  try {
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.className = 'rpc-status info';
+      if (statusMessage) statusMessage.textContent = 'Сохранение настроек...';
+    }
+    
+    const response = await fetch(`/api/positions/${positionAddress}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        autoClaim,
+      }),
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update position settings');
+    }
+    
+    if (statusEl) {
+      statusEl.className = 'rpc-status success';
+      if (statusMessage) statusMessage.textContent = '✅ Настройки успешно сохранены';
+    }
+    
+    // Обновляем список позиций
+    await loadUserPositions();
+    await loadPositions();
+    
+    // Закрываем модальное окно через 1.5 секунды
+    setTimeout(() => {
+      if (positionSettingsModal) {
+        positionSettingsModal.classList.remove('show');
+      }
+      if (statusEl) {
+        statusEl.style.display = 'none';
+      }
+    }, 1500);
+  } catch (error) {
+    console.error('Error saving position settings:', error);
+    if (statusEl) {
+      statusEl.className = 'rpc-status error';
+      if (statusMessage) statusMessage.textContent = '❌ Ошибка: ' + error.message;
+    }
   }
 }
 
@@ -4877,6 +5004,31 @@ function initAdminPanel() {
   const savePoolConfigBtn = document.getElementById('savePoolConfigBtn');
   if (savePoolConfigBtn) {
     savePoolConfigBtn.addEventListener('click', savePoolConfigFromModal);
+  }
+  
+  // Инициализация модального окна настроек позиции
+  const positionSettingsModal = document.getElementById('positionSettingsModal');
+  const closePositionSettingsModalBtn = document.getElementById('closePositionSettingsModalBtn');
+  if (closePositionSettingsModalBtn) {
+    closePositionSettingsModalBtn.addEventListener('click', () => {
+      if (positionSettingsModal) {
+        positionSettingsModal.classList.remove('show');
+      }
+    });
+  }
+  
+  const savePositionSettingsBtn = document.getElementById('savePositionSettingsBtn');
+  if (savePositionSettingsBtn) {
+    savePositionSettingsBtn.addEventListener('click', savePositionSettings);
+  }
+  
+  // Закрытие модального окна при клике вне его
+  if (positionSettingsModal) {
+    positionSettingsModal.addEventListener('click', (e) => {
+      if (e.target === positionSettingsModal) {
+        positionSettingsModal.classList.remove('show');
+      }
+    });
   }
   
   const poolConfigModal = document.getElementById('poolConfigModal');
